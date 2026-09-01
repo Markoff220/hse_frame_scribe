@@ -25,8 +25,11 @@
   .drop:hover,.drop.over { border-color:var(--accent); background:var(--card2); }
   .drop .big { font-size:17px; font-weight:600; }
   .drop .hint,.uploading,.empty { color:var(--muted); font-size:13px; margin-top:6px; }
-  .drop input { display:none; }
-  .uploading { min-height:22px; margin-top:10px; }
+   .drop input { display:none; }
+   .uploading { min-height:22px; margin-top:10px; }
+   .mts { margin-top:16px; padding:16px; border:1px solid var(--line); border-radius:12px; background:var(--card); }
+   .mts strong { display:block; font-size:14px; }.mts small { color:var(--muted); }
+   .mts form { display:flex; gap:8px; margin-top:10px; }.mts input { flex:1; min-width:0; background:#0b0d11; border:1px solid var(--line); border-radius:8px; color:var(--text); padding:8px 10px; font:inherit; }.mts input:focus { outline:0; border-color:var(--accent); }
   h2 { font-size:15px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin:28px 0 12px; }
   .job { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:10px; display:flex; gap:14px; align-items:center; }
   .job .info { flex:1; min-width:0; }.job .name { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }.job .meta { color:var(--muted); font-size:12px; margin-top:2px; }
@@ -49,6 +52,7 @@
 
   <nav class="tabs" aria-label="Разделы">
     <button class="tab active" data-tab="transcribe">Транскрибация</button>
+    <button class="tab" data-tab="mts">МТС Линк</button>
     <button class="tab" data-tab="records">Мои записи</button>
   </nav>
 
@@ -64,6 +68,17 @@
     <div id="logbox" class="hidden" style="margin-top:26px"><h2>Лог</h2><pre class="log" id="logtext"></pre></div>
   </section>
 
+  <section class="panel hidden" id="panel-mts">
+    <div class="mts">
+      <strong>Запись экрана со звуком из МТС Линк</strong>
+      <small>Вставь публичную ссылку на запись. Скачается экран и сведённый звук конференции.</small>
+      <form id="mts-form"><input id="mts-url" type="url" placeholder="https://my.mts-link.ru/j/.../record-new/..." required><button class="primary">Скачать MP4</button></form>
+      <div class="uploading" id="mtsstat"></div>
+    </div>
+    <h2>Активные загрузки</h2>
+    <div id="mts-jobs"><div class="empty">Загрузок пока нет.</div></div>
+  </section>
+
   <section class="panel hidden" id="panel-records">
     <h2>Готовые записи</h2>
     <div id="records-jobs"><div class="empty">Готовых записей пока нет.</div></div>
@@ -73,7 +88,7 @@
 </div>
 <script>
 const $ = id => document.getElementById(id);
-const drop = $('drop'), file = $('file'), upstat = $('upstat'), transcribeJobs = $('transcribe-jobs'), recordsJobs = $('records-jobs');
+const drop = $('drop'), file = $('file'), upstat = $('upstat'), mtsForm = $('mts-form'), mtsUrl = $('mts-url'), mtsStat = $('mtsstat'), transcribeJobs = $('transcribe-jobs'), mtsJobs = $('mts-jobs'), recordsJobs = $('records-jobs');
 let activeJobId = null;
 const BADGE = { uploaded:['Готово к запуску','b-uploaded'], queued:['В очереди','b-queued'], running:['Обработка','b-running'], done:['Готово','b-done'], error:['Ошибка','b-error'] };
 
@@ -124,6 +139,17 @@ async function upload(f) {
   } catch (e) { upstat.textContent = 'Ошибка: ' + e.message; }
   file.value = '';
 }
+mtsForm.addEventListener('submit', async e => {
+  e.preventDefault();
+  mtsStat.textContent = 'Добавление задачи…';
+  try {
+    const r = await fetch('/api/mts-link', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url:mtsUrl.value})});
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.detail || r.statusText);
+    mtsStat.textContent = `✓ ${j.name}: загрузка поставлена в очередь.`;
+    mtsUrl.value = ''; activeJobId = j.id; refresh();
+  } catch (e) { mtsStat.textContent = 'Ошибка: ' + e.message; }
+});
 async function startJob(id) {
   try {
     const r = await fetch(`/api/jobs/${id}/start`, {method:'POST'}); const j = await r.json();
@@ -135,8 +161,9 @@ function jobCard(j, records) {
   const [label, cls] = BADGE[j.status] || [j.status, 'b-queued'];
   const el = document.createElement('div'); el.className = 'job';
   const meta = j.status === 'error' ? (j.error || 'ошибка') : j.status === 'done' ? `готово в ${j.finished}` : (j.stage || '…');
-  const dir = j.status === 'done' ? resultDir(j) : '';
-  el.innerHTML = `<div class="info"><div class="name"></div><div class="meta">${new Date(j.created).toLocaleString('ru')} · ${meta}</div></div><span class="badge ${cls}">${label}</span><div class="acts"><button data-log>Лог</button>${j.status === 'uploaded' && !records ? '<button class="primary" data-start>▶ Запустить</button>' : ''}${j.status === 'done' ? `<button class="dir" data-dir title="Папка с конспектом — кликни, чтобы скопировать путь"></button>` : ''}</div>`;
+  const isMts = j.kind === 'mts_download';
+  const dir = j.status === 'done' && !isMts ? resultDir(j) : '';
+  el.innerHTML = `<div class="info"><div class="name"></div><div class="meta">${new Date(j.created).toLocaleString('ru')} · ${meta}</div></div><span class="badge ${cls}">${label}</span><div class="acts"><button data-log>Лог</button>${j.status === 'uploaded' && !records ? '<button class="primary" data-start>▶ Запустить</button>' : ''}${j.status === 'done' && isMts ? `<a class="btn primary" href="/api/jobs/${j.id}/download">Скачать MP4</a>` : ''}${j.status === 'done' && !isMts ? `<button class="dir" data-dir title="Папка с конспектом — кликни, чтобы скопировать путь"></button>` : ''}</div>`;
   el.querySelector('.name').textContent = j.name;
   el.querySelector('[data-log]').onclick = () => showLog(j.id);
   const start = el.querySelector('[data-start]'); if (start) start.onclick = () => startJob(j.id);
@@ -171,7 +198,8 @@ async function refresh() {
     healthData = health;
     renderStatus(health);
     $('footer').textContent = `Очередь: ${health.queued} · Ollama: ${health.ollama_url || '—'}`;
-    render(transcribeJobs, jobs.filter(j => j.status !== 'done'), 'Загрузи видео, затем нажми «Запустить».');
+    render(transcribeJobs, jobs.filter(j => j.status !== 'done' && j.kind !== 'mts_download'), 'Загрузи видео, затем нажми «Запустить».');
+    render(mtsJobs, jobs.filter(j => j.status !== 'done' && j.kind === 'mts_download'), 'Загрузок пока нет.');
     render(recordsJobs, jobs.filter(j => j.status === 'done'), 'Готовых записей пока нет.', true);
     const anyActive = jobs.some(j => j.status === 'running' || j.status === 'queued');
     if (activeJobId) { const j = jobs.find(x => x.id === activeJobId); if (j?.status === 'running') showLog(activeJobId); else if (j?.status === 'done') activeJobId = null; }

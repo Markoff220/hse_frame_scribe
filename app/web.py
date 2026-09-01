@@ -158,9 +158,12 @@ def _job_logger(job_id: str) -> logging.Logger:
 
     class StageHandler(logging.Handler):
         def emit(self, record):
-            m = STAGE_RE.search(record.getMessage())
+            message = record.getMessage()
+            m = STAGE_RE.search(message)
             if m:
-                job["stage"] = record.getMessage()
+                job["stage"] = message
+            elif message.startswith(("Скачивание ", "Сборка MP4")) or "аудиодорожки " in message:
+                job["stage"] = message.strip()
 
     logger = logging.getLogger(f"videonotes.job.{job_id}")
     logger.setLevel(logging.INFO)
@@ -184,12 +187,18 @@ def worker() -> None:
         jlog = _job_logger(job_id)
         job["status"] = "running"
         job["started"] = _now()
-        job["stage"] = "Загрузка моделей..."
         try:
-            out = process_video(Path(job["path"]), cfg, jlog)
+            if job.get("kind") == "mts_download":
+                job["stage"] = "Скачивание записи экрана со звуком..."
+                from mts_link import download_recording
+                job["out"] = str(download_recording(job["source_url"], jlog))
+                job["stage"] = "MP4 со звуком скачан"
+            else:
+                job["stage"] = "Загрузка моделей..."
+                job["out"] = str(process_video(Path(job["path"]), cfg, jlog))
             job["status"] = "done"
-            job["out"] = str(out)
-            job["stage"] = "Готово"
+            if job.get("kind") != "mts_download":
+                job["stage"] = "Готово"
         except Exception as e:  # noqa: BLE001
             job["status"] = "error"
             job["error"] = str(e)
@@ -268,6 +277,37 @@ async def upload(file: UploadFile = File(...)) -> dict:
     return JOBS[job_id]
 
 
+@app.post("/api/mts-link")
+def add_mts_link(payload: dict) -> dict:
+    """Ставит в очередь загрузку screen-share MP4 из публичной ссылки МТС Линк."""
+    url = str(payload.get("url", ""))
+    try:
+        from mts_link import parse_share_url
+        record_id, _ = parse_share_url(url)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+    job_id = uuid.uuid4().hex[:8]
+    with LOCK:
+        JOBS[job_id] = {
+            "id": job_id,
+            "name": f"МТС Линк: запись экрана со звуком #{record_id}",
+            "kind": "mts_download",
+            "source_url": url,
+            "status": "queued",
+            "stage": "В очереди",
+            "created": _now(),
+            "started": None,
+            "finished": None,
+            "out": None,
+            "error": None,
+        }
+        Q.put(job_id)
+        _save_jobs()
+    log.info("МТС Линк #%s поставлена в очередь: job %s", record_id, job_id)
+    return {k: v for k, v in JOBS[job_id].items() if k != "source_url"}
+
+
 @app.post("/api/jobs/{job_id}/start")
 def start_job(job_id: str) -> dict:
     """Ставим ранее загруженное видео в очередь только по явному действию пользователя."""
@@ -289,7 +329,7 @@ def start_job(job_id: str) -> dict:
 def jobs() -> list[dict]:
     with LOCK:
         items = [
-            {k: v for k, v in j.items() if k not in ("path",)}
+            {k: v for k, v in j.items() if k not in ("path", "source_url")}
             for j in sorted(JOBS.values(), key=lambda x: x["created"], reverse=True)
         ]
     return items
@@ -318,6 +358,8 @@ def job_download(job_id: str) -> FileResponse:
             410,
             "Файл результата не найден на диске (удалён или переименован). Запустите задачу заново.",
         )
+    if job.get("kind") == "mts_download":
+        return FileResponse(dest, media_type="video/mp4", filename=dest.name)
     return FileResponse(dest, media_type="text/markdown", filename="конспект.md")
 
 

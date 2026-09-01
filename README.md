@@ -104,9 +104,9 @@ python3 -m venv .venv
 .venv/bin/python app/web.py 8090
 ```
 
-### Скачать демонстрацию экрана из МТС Линк
+### Скачать запись экрана со звуком из МТС Линк
 
-Для публичной записи МТС Линк можно скачать только дорожку демонстрации экрана в MP4. Команда использует access-token из shared-ссылки; закрытые записи и другие методы обхода доступа не поддерживаются.
+Для публичной записи МТС Линк можно скачать демонстрацию экрана и сведённый звук конференции в один MP4. Команда использует access-token из shared-ссылки; закрытые записи и другие методы обхода доступа не поддерживаются.
 
 ```bash
 .venv/bin/python app/pipeline/main.py download-mts "https://my.mts-link.ru/j/.../record-new/<id>/<token>"
@@ -118,7 +118,7 @@ python3 -m venv .venv
 docker compose exec pipeline python pipeline/main.py download-mts "https://my.mts-link.ru/j/.../record-new/<id>/<token>"
 ```
 
-MP4 сохраняется в `runtime/tmp/mts_link/<id>/screenshare.mp4`. Если в записи несколько отдельных демонстраций, они сохраняются отдельными файлами и не склеиваются.
+MP4 сохраняется в `runtime/tmp/mts_link/<id>/recording.mp4`. Промежуточные screen-share и конференц-потоки остаются рядом в той же папке.
 
 ## Настройка
 
@@ -176,6 +176,7 @@ MP4 сохраняется в `runtime/tmp/mts_link/<id>/screenshare.mp4`. Ес�
 | Метод | Endpoint | Назначение |
 | --- | --- | --- |
 | `POST` | `/api/upload` | Загрузить видео |
+| `POST` | `/api/mts-link` | Поставить в очередь запись экрана со звуком из публичной ссылки МТС Линк |
 | `GET` | `/api/jobs` | Получить очередь и статусы |
 | `POST` | `/api/jobs/{id}/start` | Поставить загруженную задачу в очередь |
 | `GET` | `/api/jobs/{id}/log` | Получить лог задачи |

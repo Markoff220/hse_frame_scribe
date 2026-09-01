@@ -30,3 +30,18 @@ def test_uploaded_job_waits_until_manual_start(tmp_path, monkeypatch):
     assert response.status_code == 200
     assert response.json()["status"] == "queued"
     assert web.Q.get_nowait() == job_id
+
+
+def test_mts_link_job_is_queued_without_exposing_source_url(tmp_path, monkeypatch):
+    monkeypatch.setattr(web, "Q", __import__("queue").Queue())
+    monkeypatch.setattr(web, "JOBS_FILE", tmp_path / "jobs.json")
+    monkeypatch.setattr(web, "JOBS", {})
+
+    response = TestClient(web.app).post(
+        "/api/mts-link",
+        json={"url": "https://my.mts-link.ru/j/1/2/record-new/123456/token-value"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["kind"] == "mts_download"
+    assert "source_url" not in response.json()
