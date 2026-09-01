@@ -104,6 +104,22 @@ python3 -m venv .venv
 .venv/bin/python app/web.py 8090
 ```
 
+### Скачать демонстрацию экрана из МТС Линк
+
+Для публичной записи МТС Линк можно скачать только дорожку демонстрации экрана в MP4. Команда использует access-token из shared-ссылки; закрытые записи и другие методы обхода доступа не поддерживаются.
+
+```bash
+.venv/bin/python app/pipeline/main.py download-mts "https://my.mts-link.ru/j/.../record-new/<id>/<token>"
+```
+
+В Docker:
+
+```bash
+docker compose exec pipeline python pipeline/main.py download-mts "https://my.mts-link.ru/j/.../record-new/<id>/<token>"
+```
+
+MP4 сохраняется в `runtime/tmp/mts_link/<id>/screenshare.mp4`. Если в записи несколько отдельных демонстраций, они сохраняются отдельными файлами и не склеиваются.
+
 ## Настройка
 
 `config/config.json` используется в локальном режиме, `config/docker.json` — в Docker. Пути в `output.dir` разрешаются относительно корня проекта, а не текущей директории терминала.
