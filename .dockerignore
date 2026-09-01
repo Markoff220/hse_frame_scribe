@@ -10,10 +10,7 @@ __pycache__/
 *.py[cod]
 
 # Runtime-данные и локальная конфигурация
-in/
-logs/
-models/
-tmp/
+runtime/
 .env
 .env.example
 
@@ -22,5 +19,4 @@ AGENTS.md
 README.md
 conftest.py
 *.bat
-config.json
-config.docker.json
+config/

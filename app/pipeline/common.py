@@ -7,17 +7,16 @@ import sys
 from pathlib import Path
 
 def _find_root() -> Path:
-    """Корень проекта: ближайшая вверх папка с config.json / config.docker.json.
-    Локально — корень проекта (config.json), в контейнере — /app (config.docker.json)."""
+    """Корень проекта: ближайшая вверх папка с config/config.json или config/docker.json."""
     here = Path(__file__).resolve().parent
     for candidate in (here, *here.parents[:5]):
-        if (candidate / "config.json").exists() or (candidate / "config.docker.json").exists():
+        if (candidate / "config" / "config.json").exists() or (candidate / "config" / "docker.json").exists():
             return candidate
     return here.parent.parent  # фолбэк: три уровня вверх от common.py
 
 
 ROOT = _find_root()  # корень проекта (04_VideoNotes)
-CONFIG_PATH = Path(os.environ.get("VIDEONOTES_CONFIG", str(ROOT / "config.json")))
+CONFIG_PATH = Path(os.environ.get("VIDEONOTES_CONFIG", str(ROOT / "config" / "config.json")))
 VIDEO_EXTS = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".ts", ".flv", ".wmv", ".mpg", ".mpeg"}
 
 

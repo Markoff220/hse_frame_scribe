@@ -2,7 +2,7 @@
 
 Команды:
   python app/pipeline/main.py process <video>   — обработать одно видео
-  python app/pipeline/main.py watch             — следить за папкой in/
+  python app/pipeline/main.py watch             — следить за папкой runtime/in/
   python app/pipeline/main.py selftest          — проверка установки (модели, ffmpeg, Ollama)
 """
 import shutil
@@ -28,7 +28,7 @@ def process_video(video: Path, cfg: dict, log) -> Path:
     duration = A.ffprobe_duration(video)
     log.info("Длительность: %s", fmt_ts(duration))
 
-    work = ROOT / "tmp" / f"{sanitize(video.stem)}_{datetime.now():%H%M%S}"
+    work = ROOT / "runtime" / "tmp" / f"{sanitize(video.stem)}_{datetime.now():%H%M%S}"
     work.mkdir(parents=True, exist_ok=True)
 
     # --- 1. Аудио ---
@@ -117,7 +117,7 @@ def process_video(video: Path, cfg: dict, log) -> Path:
 
 
 def watch(cfg: dict, log) -> None:
-    in_dir = ROOT / "in"
+    in_dir = ROOT / "runtime" / "in"
     in_dir.mkdir(exist_ok=True)
     poll = cfg.get("watch", {}).get("poll_seconds", 3)
     move_on_success = cfg.get("watch", {}).get("move_on_success", True)
@@ -159,7 +159,7 @@ def selftest(cfg: dict, log) -> int:
         from asr import GigaAMASR
         asr = GigaAMASR(cfg["asr"], log)
         asr.load()
-        sample = ROOT / "tmp" / "example.wav"
+        sample = ROOT / "runtime" / "tmp" / "example.wav"
         sample.parent.mkdir(parents=True, exist_ok=True)
         if not sample.exists():
             urllib.request.urlretrieve(
@@ -176,7 +176,7 @@ def selftest(cfg: dict, log) -> int:
     log.info("Проверка кадров (синтетическое видео 30 с)...")
     try:
         import subprocess
-        vid = ROOT / "tmp" / "selftest_video.mp4"
+        vid = ROOT / "runtime" / "tmp" / "selftest_video.mp4"
         font = ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
                 if Path("/usr/share/fonts").exists() else "C:/Windows/Fonts/arial.ttf")
         subprocess.run([
@@ -188,7 +188,7 @@ def selftest(cfg: dict, log) -> int:
         ], check=True)
         import frames as F
         plan = F.plan_frames(30, F.detect_scenes(vid, 0.3), 10, 5)
-        jpg = ROOT / "tmp" / "selftest_frame.jpg"
+        jpg = ROOT / "runtime" / "tmp" / "selftest_frame.jpg"
         if plan and F.extract_frame(vid, plan[0], jpg, 640):
             log.info("✓ Кадры: план %d, извлечён %s", len(plan), jpg.name)
         else:
@@ -218,7 +218,7 @@ def selftest(cfg: dict, log) -> int:
 
 def main() -> int:
     cfg = load_config()
-    log = setup_logging(ROOT / "logs" / f"run_{datetime.now():%Y%m%d_%H%M%S}.log")
+    log = setup_logging(ROOT / "runtime" / "logs" / f"run_{datetime.now():%Y%m%d_%H%M%S}.log")
     args = sys.argv[1:]
     if not args:
         print(__doc__)

@@ -1,0 +1,13 @@
+@echo off
+chcp 65001 >nul
+setlocal
+cd /d "%~dp0..\.."
+if not exist venv\Scripts\python.exe (
+  echo Сначала запусти scripts\windows\setup.bat (установка зависимостей)
+  pause
+  exit /b 1
+)
+echo Режим наблюдения: кидай видео в папку runtime\in\ — обработка автоматически.
+echo Остановить: Ctrl+C
+call venv\Scripts\python.exe app\pipeline\main.py watch
+pause

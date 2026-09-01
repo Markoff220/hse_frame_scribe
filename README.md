@@ -41,13 +41,13 @@ VideoNotes превращает видео в Markdown-конспект для O
 
 ## Быстрый запуск Docker
 
-1. Скопируйте шаблон окружения и укажите папку для конспектов:
+1. Скопируйте шаблон окружения:
 
    ```bash
    cp .env.example .env
    ```
 
-   В `.env` задайте `OUTPUT_DIR`. Это путь **на хосте**; удобно указать папку внутри Obsidian vault. Если переменную не указывать, результаты попадут в `./output` рядом с проектом.
+   Результаты всегда сохраняются в `./output` рядом с проектом.
 
 2. Для GPU-профиля установите NVIDIA Container Toolkit, затем в `.env` включите:
 
@@ -84,10 +84,10 @@ Ollama поднимается внутри стека. При первом за�
 
 ### Windows
 
-1. Запустите `setup.bat`.
-2. Перетащите видео на `process.bat`, либо запустите `watch.bat` и положите видео в `in/`.
+1. Запустите `scripts/windows/setup.bat`.
+2. Перетащите видео на `scripts/windows/process.bat`, либо запустите `scripts/windows/watch.bat` и положите видео в `runtime/in/`.
 
-`watch.bat` переносит успешно обработанные файлы в `in/processed/`, а завершившиеся ошибкой — в `in/failed/`.
+`watch.bat` переносит успешно обработанные файлы в `runtime/in/processed/`, а завершившиеся ошибкой — в `runtime/in/failed/`.
 
 ### Linux и macOS
 
@@ -106,12 +106,12 @@ python3 -m venv .venv
 
 ## Настройка
 
-`config.json` используется в локальном режиме, `config.docker.json` — в Docker. Пути в `output.dir` разрешаются относительно корня проекта, а не текущей директории терминала.
+`config/config.json` используется в локальном режиме, `config/docker.json` — в Docker. Пути в `output.dir` разрешаются относительно корня проекта, а не текущей директории терминала.
 
 | Параметр | Назначение | Значение по умолчанию |
 | --- | --- | --- |
 | `asr.model` | Модель GigaAM | `v3_e2e_rnnt` |
-| `asr.model_dir` | Папка весов ASR | `models/gigaam` |
+| `asr.model_dir` | Папка весов ASR | `runtime/models/gigaam` |
 | `asr.vad_threshold` | Порог Silero VAD | `0.5` |
 | `asr.max_segment_seconds` | Максимальная длина фрагмента ASR | `22` |
 | `frames.scene_threshold` | Чувствительность к смене сцен | `0.3` |
@@ -125,14 +125,13 @@ python3 -m venv .venv
 | `llm.temperature` | Температура генерации | `0.2` |
 | `llm.chunk_words` | Размер блока транскрипта для map-reduce | `2000` |
 | `output.dir` | Папка готовых конспектов | `output` в Docker |
-| `watch.poll_seconds` | Интервал проверки папки `in/` | `3` |
+| `watch.poll_seconds` | Интервал проверки папки `runtime/in/` | `3` |
 | `watch.move_on_success` | Переносить успешно обработанное видео | `true` |
 
 Переменные `.env` переопределяют настройки Docker:
 
 | Переменная | Назначение |
 | --- | --- |
-| `OUTPUT_DIR` | Папка конспектов на хосте |
 | `OLLAMA_URL` | URL Ollama; по умолчанию `http://ollama:11434` внутри стека |
 | `VLM_MODEL` | Модель для анализа кадров |
 | `LLM_MODEL` | Модель для итогового конспекта |
@@ -153,7 +152,7 @@ python3 -m venv .venv
 
 - Проверка локального стека: `python app/pipeline/main.py selftest`.
 - Статус web-стека: `GET /api/health`.
-- Логи задач: `logs/job_<id>.log`.
+- Логи задач: `runtime/logs/job_<id>.log`.
 - В интерфейсе загрузка только создаёт задачу; её нужно явно запустить кнопкой «Запустить». Задачи выполняются по одной.
 
 ## API

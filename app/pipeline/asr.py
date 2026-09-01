@@ -1,6 +1,6 @@
 """ASR: GigaAM v3 e2e RNN-T (официальный пакет salute-developers/GigaAM).
 
-Веса скачиваются с публичного CDN Sber в models/gigaam (первый запуск ~1 ГБ).
+Веса скачиваются с публичного CDN Sber в runtime/models/gigaam (первый запуск ~1 ГБ).
 Лимит transcribe() — 25 с, поэтому на вход идут VAD-чанки.
 """
 import gc
@@ -26,7 +26,7 @@ class GigaAMASR:
         if self.model is not None:
             return
         import gigaam
-        model_dir = Path(self.cfg.get("model_dir", "models/gigaam"))
+        model_dir = Path(self.cfg.get("model_dir", "runtime/models/gigaam"))
         if not model_dir.is_absolute():
             from common import ROOT
             model_dir = ROOT / model_dir

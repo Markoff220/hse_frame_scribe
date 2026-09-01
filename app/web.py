@@ -34,7 +34,7 @@ from main import process_video  # noqa: E402
 
 app = FastAPI(title="VideoNotes")
 cfg = load_config()
-log = setup_logging(ROOT / "logs" / f"web_{datetime.now():%Y%m%d}.log")
+log = setup_logging(ROOT / "runtime" / "logs" / f"web_{datetime.now():%Y%m%d}.log")
 
 
 def _ollama_tags(url: str) -> tuple[bool, set[str]]:
@@ -61,7 +61,7 @@ def _model_present(need: str, present: set[str]) -> bool:
 def _asr_status() -> str:
     """Статус весов GigaAM: ok | partial (скачана часть/обрубились) | missing."""
     model = cfg["asr"].get("model", "v3_e2e_rnnt")
-    model_dir = Path(cfg["asr"].get("model_dir", "models/gigaam"))
+    model_dir = Path(cfg["asr"].get("model_dir", "runtime/models/gigaam"))
     if not model_dir.is_absolute():
         model_dir = ROOT / model_dir
     files = [model_dir / f"{model}.ckpt"]
@@ -110,11 +110,11 @@ def _log_ollama_status() -> None:
 
 _log_ollama_status()
 
-UPLOAD_DIR = ROOT / "tmp" / "uploads"
+UPLOAD_DIR = ROOT / "runtime" / "tmp" / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 JOBS: dict[str, dict] = {}
-JOBS_FILE = ROOT / "tmp" / "jobs.json"
+JOBS_FILE = ROOT / "runtime" / "tmp" / "jobs.json"
 Q: queue.Queue = queue.Queue()
 LOCK = threading.Lock()
 
@@ -171,7 +171,7 @@ def _job_logger(job_id: str) -> logging.Logger:
     sh.setFormatter(fmt)
     logger.addHandler(sh)
     logger.addHandler(StageHandler())
-    fh = logging.FileHandler(ROOT / "logs" / f"job_{job_id}.log", encoding="utf-8")
+    fh = logging.FileHandler(ROOT / "runtime" / "logs" / f"job_{job_id}.log", encoding="utf-8")
     fh.setFormatter(fmt)
     logger.addHandler(fh)
     return logger
@@ -297,7 +297,7 @@ def jobs() -> list[dict]:
 
 @app.get("/api/jobs/{job_id}/log", response_class=PlainTextResponse)
 def job_log(job_id: str) -> str:
-    f = ROOT / "logs" / f"job_{job_id}.log"
+    f = ROOT / "runtime" / "logs" / f"job_{job_id}.log"
     if not f.exists():
         return "(лог ещё не создан)"
     lines = f.read_text(encoding="utf-8").splitlines()

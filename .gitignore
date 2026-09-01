@@ -8,14 +8,19 @@ __pycache__/
 venv/
 
 # Локальные данные — создаются при работе
-logs/*
-!logs/.gitkeep
-tmp/*
-!tmp/.gitkeep
-in/*
-!in/.gitkeep
-models/*
-!models/.gitkeep
+runtime/*
+!runtime/in/
+runtime/in/*
+!runtime/in/.gitkeep
+!runtime/logs/
+runtime/logs/*
+!runtime/logs/.gitkeep
+!runtime/models/
+runtime/models/*
+!runtime/models/.gitkeep
+!runtime/tmp/
+runtime/tmp/*
+!runtime/tmp/.gitkeep
 
 # Локальная конфигурация окружения (шаблон — .env.example)
 .env

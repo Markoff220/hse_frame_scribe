@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 setlocal
-cd /d "%~dp0"
+cd /d "%~dp0..\.."
 echo === VideoNotes: установка ===
 echo.
 
@@ -62,6 +62,6 @@ echo === Самопроверка (GigaAM скачает модель ~1 ГБ, �
 call venv\Scripts\python.exe app\pipeline\main.py selftest
 echo.
 echo Готово! Дальше:
-echo   - перетащи видео на process.bat, ИЛИ
-echo   - запусти watch.bat и кидай видео в папку in\
+echo   - перетащи видео на scripts\windows\process.bat, ИЛИ
+echo   - запусти scripts\windows\watch.bat и кидай видео в папку runtime\in\
 pause

@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 setlocal
-cd /d "%~dp0"
+cd /d "%~dp0..\.."
 
 if "%~1"=="" (
   echo Использование: перетащи видео-файл на этот файл
@@ -10,7 +10,7 @@ if "%~1"=="" (
 )
 
 if not exist venv\Scripts\python.exe (
-  echo Сначала запусти setup.bat (установка зависимостей)
+  echo Сначала запусти scripts\windows\setup.bat (установка зависимостей)
   pause
   exit /b 1
 )

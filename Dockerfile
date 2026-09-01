@@ -18,6 +18,7 @@ RUN pip install --no-cache-dir --index-url ${PYTORCH_INDEX} torch==2.11.0 torcha
 COPY app/pipeline/ ./pipeline/
 COPY app/web.py ./web.py
 COPY app/web/ ./web/
+RUN mkdir -p config runtime
 
 EXPOSE 8090
 CMD ["python", "web.py", "8090"]

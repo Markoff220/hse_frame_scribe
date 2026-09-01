@@ -1,7 +1,7 @@
 {
   "asr": {
     "model": "v3_e2e_rnnt",
-    "model_dir": "models/gigaam",
+    "model_dir": "runtime/models/gigaam",
     "vad_threshold": 0.5,
     "max_segment_seconds": 22
   },
