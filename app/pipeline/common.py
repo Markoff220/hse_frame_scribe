@@ -1,0 +1,68 @@
+"""Общие утилиты: конфиг, логирование, форматирование времени."""
+import json
+import logging
+import os
+import re
+import sys
+from pathlib import Path
+
+def _find_root() -> Path:
+    """Корень проекта: ближайшая вверх папка с config.json / config.docker.json.
+    Локально — корень проекта (config.json), в контейнере — /app (config.docker.json)."""
+    here = Path(__file__).resolve().parent
+    for candidate in (here, *here.parents[:5]):
+        if (candidate / "config.json").exists() or (candidate / "config.docker.json").exists():
+            return candidate
+    return here.parent.parent  # фолбэк: три уровня вверх от common.py
+
+
+ROOT = _find_root()  # корень проекта (04_VideoNotes)
+CONFIG_PATH = Path(os.environ.get("VIDEONOTES_CONFIG", str(ROOT / "config.json")))
+VIDEO_EXTS = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".ts", ".flv", ".wmv", ".mpg", ".mpeg"}
+
+
+def load_config() -> dict:
+    cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    # Переопределения через переменные окружения (Docker)
+    if os.environ.get("OLLAMA_URL"):
+        cfg.setdefault("llm", {})["ollama_url"] = os.environ["OLLAMA_URL"]
+    if os.environ.get("VLM_MODEL"):
+        cfg.setdefault("llm", {})["vlm_model"] = os.environ["VLM_MODEL"]
+    if os.environ.get("LLM_MODEL"):
+        cfg.setdefault("llm", {})["llm_model"] = os.environ["LLM_MODEL"]
+    if os.environ.get("ASR_DEVICE"):
+        cfg.setdefault("asr", {})["device"] = os.environ["ASR_DEVICE"]
+    return cfg
+
+
+def setup_logging(log_path: Path | None = None) -> logging.Logger:
+    logger = logging.getLogger("videonotes")
+    logger.setLevel(logging.INFO)
+    logger.handlers.clear()
+    fmt = logging.Formatter("%(asctime)s %(levelname)-7s %(message)s", datefmt="%H:%M:%S")
+    sh = logging.StreamHandler(sys.stdout)
+    sh.setFormatter(fmt)
+    logger.addHandler(sh)
+    if log_path:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        fh = logging.FileHandler(log_path, encoding="utf-8")
+        fh.setFormatter(fmt)
+        logger.addHandler(fh)
+    return logger
+
+
+def fmt_ts(seconds: float) -> str:
+    """0:00:00 или MM:SS."""
+    seconds = max(0, int(seconds))
+    h, r = divmod(seconds, 3600)
+    m, s = divmod(r, 60)
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
+
+
+def sanitize(name: str) -> str:
+    name = re.sub(r"[\\/:*?\"<>|]+", " ", name)
+    return re.sub(r"\s+", " ", name).strip() or "video"
+
+
+def is_video(path: Path) -> bool:
+    return path.suffix.lower() in VIDEO_EXTS and path.is_file()

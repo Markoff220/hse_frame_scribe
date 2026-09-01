@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Виртуальные окружения (Windows: venv, Linux: .venv)
+.venv/
+venv/
+
+# Локальные данные — создаются при работе
+logs/*
+!logs/.gitkeep
+tmp/*
+!tmp/.gitkeep
+in/*
+!in/.gitkeep
+models/*
+!models/.gitkeep
+
+# Локальная конфигурация окружения (шаблон — .env.example)
+.env
+
+# Служебное
+.opencode/
+.DS_Store
+Thumbs.db

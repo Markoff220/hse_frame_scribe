@@ -1,0 +1,82 @@
+# VideoNotes: самодостаточный стек, GPU-профиль (RTX 2080 Ti).
+# `docker compose up -d --build` поднимает всё и само:
+#   ollama      — LLM/VLM-сервер с GPU (внутри стека, хостовый Ollama не нужен)
+#   ollama-init — разовая загрузка моделей VLM/LLM (idempotent, переживает пересборки)
+#   pipeline    — web-сервис (ffmpeg + GigaAM на CUDA + кадры + конспект); GigaAM-веса качает сам в volume
+#
+# Требуется NVIDIA Container Toolkit на хосте (pacman: nvidia-container-toolkit).
+# CPU-профиль: закомментируйте блоки `deploy:` ниже и см. комментарии в .env.
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: videonotes-ollama
+    volumes:
+      - ollama-models:/root/.ollama
+    # GPU (NVIDIA): требует NVIDIA Container Toolkit на хосте
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: videonotes-ollama-init
+    depends_on:
+      - ollama
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["sh", "-c"]
+    command:
+      - "set -e; echo '[init] Ожидание Ollama...'; for i in $$(seq 1 90); do ollama list >/dev/null 2>&1 && break; sleep 2; done; echo \"[init] Загрузка ${VLM_MODEL}...\"; ollama pull ${VLM_MODEL}; echo \"[init] Загрузка ${LLM_MODEL}...\"; ollama pull ${LLM_MODEL}; echo '[init] Модели готовы'"
+    restart: "no"
+
+  pipeline:
+    build:
+      context: .
+      args:
+        # torch берётся с PyPI (CUDA-сборка cu130, подходит драйверу хоста).
+        # Для старых драйверов: PYTORCH_INDEX=https://download.pytorch.org/whl/cu124
+        PYTORCH_INDEX: ${PYTORCH_INDEX:-https://pypi.org/simple}
+    image: videonotes:latest
+    container_name: videonotes
+    ports:
+      - "${PORT:-8090}:8090"
+    environment:
+      VIDEONOTES_CONFIG: /app/config.docker.json
+      OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
+      VLM_MODEL: ${VLM_MODEL:-qwen2.5vl:3b}
+      LLM_MODEL: ${LLM_MODEL:-qwen2.5:3b}
+      ASR_DEVICE: ${ASR_DEVICE:-auto}
+      # Хостовый путь к папке конспектов — UI показывает его вместо /app/output
+      OUTPUT_HOST_DIR: ${OUTPUT_DIR:-./output}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # GPU (NVIDIA): требует NVIDIA Container Toolkit на хосте
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    depends_on:
+      ollama:
+        condition: service_started
+      ollama-init:
+        condition: service_completed_successfully
+    volumes:
+      - ./config.docker.json:/app/config.docker.json:ro
+      - gigaam-models:/app/models/gigaam
+      - ./tmp:/app/tmp
+      - ./logs:/app/logs
+      - ${OUTPUT_DIR:-./output}:/app/output
+    restart: unless-stopped
+
+volumes:
+  gigaam-models:
+  ollama-models:

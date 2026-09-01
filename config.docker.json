@@ -1,0 +1,29 @@
+{
+  "asr": {
+    "model": "v3_e2e_rnnt",
+    "model_dir": "models/gigaam",
+    "vad_threshold": 0.5,
+    "max_segment_seconds": 22
+  },
+  "frames": {
+    "scene_threshold": 0.3,
+    "interval_seconds": 90,
+    "max_frames": 100,
+    "width": 1280
+  },
+  "llm": {
+    "provider": "ollama",
+    "ollama_url": "http://ollama:11434",
+    "vlm_model": "qwen2.5vl:7b",
+    "llm_model": "qwen2.5:14b-instruct-q4_K_M",
+    "temperature": 0.2,
+    "chunk_words": 2000
+  },
+  "output": {
+    "dir": "output"
+  },
+  "watch": {
+    "poll_seconds": 3,
+    "move_on_success": true
+  }
+}

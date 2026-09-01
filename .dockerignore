@@ -1,0 +1,26 @@
+# В образ попадают только requirements.txt и app/ (см. Dockerfile).
+# Конфиг Docker передаётся bind-маунтом из docker-compose.yml.
+.git/
+.gitignore
+.opencode/
+.venv/
+venv/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+
+# Runtime-данные и локальная конфигурация
+in/
+logs/
+models/
+tmp/
+.env
+.env.example
+
+# Документация и инструменты разработки не нужны в runtime-образе
+AGENTS.md
+README.md
+conftest.py
+*.bat
+config.json
+config.docker.json

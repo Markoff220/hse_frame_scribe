@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VideoNotes — видео → нейроконспект</title>
+<style>
+  :root { --bg:#0f1115; --card:#181b22; --card2:#1f232d; --line:#2a2f3a; --text:#e8eaf0; --muted:#8b93a7; --accent:#4f8cff; --ok:#3ecf8e; --err:#ff6b6b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif; }
+  .wrap { max-width:860px; margin:0 auto; padding:32px 20px 60px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .status { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:22px; }
+  .st { display:inline-flex; align-items:center; gap:7px; background:var(--card); border:1px solid var(--line); border-radius:20px; padding:5px 12px 5px 9px; font-size:12.5px; color:var(--muted); }
+  .st i { width:9px; height:9px; border-radius:50%; background:var(--muted); flex:none; }
+  .st.ok i { background:var(--ok); box-shadow:0 0 6px var(--ok); }
+  .st.err i { background:var(--err); box-shadow:0 0 6px var(--err); }
+  .st.warn i { background:#f5b942; box-shadow:0 0 6px #f5b942; }
+  .tabs { display:flex; gap:8px; border-bottom:1px solid var(--line); margin-bottom:24px; }
+  .tab { appearance:none; border:0; border-bottom:2px solid transparent; border-radius:0; background:transparent; color:var(--muted); padding:10px 4px; margin-right:18px; font-weight:600; }
+  .tab:hover { border-color:transparent; color:var(--text); }
+  .tab.active { color:var(--text); border-bottom-color:var(--accent); }
+  .panel.hidden, .hidden { display:none; }
+  .drop { border:2px dashed var(--line); border-radius:14px; background:var(--card); padding:44px 20px; text-align:center; cursor:pointer; transition:.15s; }
+  .drop:hover,.drop.over { border-color:var(--accent); background:var(--card2); }
+  .drop .big { font-size:17px; font-weight:600; }
+  .drop .hint,.uploading,.empty { color:var(--muted); font-size:13px; margin-top:6px; }
+  .drop input { display:none; }
+  .uploading { min-height:22px; margin-top:10px; }
+  h2 { font-size:15px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin:28px 0 12px; }
+  .job { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:10px; display:flex; gap:14px; align-items:center; }
+  .job .info { flex:1; min-width:0; }.job .name { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }.job .meta { color:var(--muted); font-size:12px; margin-top:2px; }
+  .badge { font-size:11px; font-weight:700; padding:3px 9px; border-radius:20px; white-space:nowrap; }.b-uploaded,.b-queued { background:#2a2f3a; color:var(--muted); }.b-running { background:#1d2c4a; color:var(--accent); }.b-done { background:#17352a; color:var(--ok); }.b-error { background:#3a2226; color:var(--err); }
+  .acts { display:flex; gap:8px; align-items:center; } button,.btn { background:var(--card2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:6px 12px; font-size:13px; cursor:pointer; text-decoration:none; display:inline-block; } button:hover,.btn:hover { border-color:var(--accent); }.primary { background:var(--accent); border-color:var(--accent); color:white; }.primary:hover { filter:brightness(1.1); }
+  .dir { max-width:380px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; color:var(--muted); }
+  pre.log { background:#0b0d11; border:1px solid var(--line); border-radius:10px; padding:14px; font-size:12px; overflow-x:auto; white-space:pre-wrap; max-height:420px; overflow-y:auto; margin:0; }
+  .footer { color:var(--muted); font-size:12px; margin-top:40px; border-top:1px solid var(--line); padding-top:14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>VideoNotes</h1>
+  <div class="status" id="status">
+    <span class="st" id="st-gpu"><i></i><span>…</span></span>
+    <span class="st" id="st-asr"><i></i><span>…</span></span>
+    <span class="st" id="st-vlm"><i></i><span>…</span></span>
+    <span class="st" id="st-llm"><i></i><span>…</span></span>
+  </div>
+
+  <nav class="tabs" aria-label="Разделы">
+    <button class="tab active" data-tab="transcribe">Транскрибация</button>
+    <button class="tab" data-tab="records">Мои записи</button>
+  </nav>
+
+  <section class="panel" id="panel-transcribe">
+    <div class="drop" id="drop">
+      <div class="big">Перетащи видео сюда</div>
+      <div class="hint">или кликни, чтобы выбрать файл (mp4, mkv, mov, avi, webm…)</div>
+      <input type="file" id="file" accept=".mp4,.mkv,.mov,.avi,.webm,.m4v,.ts,.flv,.wmv,.mpg,.mpeg">
+    </div>
+    <div class="uploading" id="upstat"></div>
+    <h2>Подготовленные и активные</h2>
+    <div id="transcribe-jobs"><div class="empty">Загрузи видео, затем нажми «Запустить».</div></div>
+    <div id="logbox" class="hidden" style="margin-top:26px"><h2>Лог</h2><pre class="log" id="logtext"></pre></div>
+  </section>
+
+  <section class="panel hidden" id="panel-records">
+    <h2>Готовые записи</h2>
+    <div id="records-jobs"><div class="empty">Готовых записей пока нет.</div></div>
+  </section>
+
+  <div class="footer" id="footer"></div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const drop = $('drop'), file = $('file'), upstat = $('upstat'), transcribeJobs = $('transcribe-jobs'), recordsJobs = $('records-jobs');
+let activeJobId = null;
+const BADGE = { uploaded:['Готово к запуску','b-uploaded'], queued:['В очереди','b-queued'], running:['Обработка','b-running'], done:['Готово','b-done'], error:['Ошибка','b-error'] };
+
+function st(id, cls, label, title) {
+  const el = $(id);
+  el.className = 'st ' + cls;
+  el.innerHTML = '<i></i><span></span>';
+  el.querySelector('span').textContent = label;
+  if (title) el.title = title;
+}
+function renderStatus(h) {
+  if (!h) return;
+  st('st-gpu', h.gpu?.available ? 'ok' : '', h.gpu?.available ? `GPU · ${h.gpu.name}` : 'CPU',
+     h.gpu?.available ? 'ASR и Ollama работают на GPU' : 'Ускорение GPU не обнаружено — работает CPU');
+  const asr = h.asr || {};
+  st('st-asr', asr.status === 'ok' ? 'ok' : asr.status === 'partial' ? 'err' : '',
+     asr.status === 'ok' ? `ASR · ${asr.model}` : asr.status === 'partial' ? 'ASR · скачивание не завершено' : `ASR · ${asr.model || ''} не скачана`,
+     asr.status === 'ok' ? 'Веса GigaAM на месте' : asr.status === 'partial' ? 'Веса GigaAM повреждены — перескачаются при следующем запуске' : 'Веса GigaAM скачаются автоматически при первом запуске');
+  for (const [id, key, what] of [['st-vlm','vlm','VLM'], ['st-llm','llm','LLM']]) {
+    const m = h[key] || {};
+    st(id, m.status === 'ok' ? 'ok' : m.status === 'missing' ? 'err' : '',
+       m.status === 'ok' ? `${what} · ${m.model}` : m.status === 'missing' ? `${what} · модель не скачана` : `${what} · Ollama недоступна`,
+       m.status === 'ok' ? 'Модель загружена в Ollama' : m.status === 'missing' ? `Ollama работает, но модель ${m.model} не загружена (ollama-init её подтянет)` : `Ollama не отвечает по ${h.ollama_url || 'адресу'}`);
+  }
+}
+
+document.querySelectorAll('.tab').forEach(tab => tab.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === tab));
+  document.querySelectorAll('.panel').forEach(x => x.classList.toggle('hidden', x.id !== `panel-${tab.dataset.tab}`));
+  history.replaceState(null, '', `#${tab.dataset.tab}`);
+});
+const _initTab = location.hash.replace('#', '');
+if (_initTab && document.querySelector(`.tab[data-tab="${_initTab}"]`)) document.querySelector(`.tab[data-tab="${_initTab}"]`).click();
+drop.addEventListener('click', () => file.click());
+['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => { if (e.dataTransfer.files.length) upload(e.dataTransfer.files[0]); });
+file.addEventListener('change', () => { if (file.files.length) upload(file.files[0]); });
+
+async function upload(f) {
+  upstat.textContent = `Загрузка ${f.name} (${(f.size / 1048576).toFixed(1)} МБ)…`;
+  const fd = new FormData(); fd.append('file', f);
+  try {
+    const r = await fetch('/api/upload', {method:'POST', body:fd}); const j = await r.json();
+    if (!r.ok) throw new Error(j.detail || r.statusText);
+    upstat.textContent = `✓ ${j.name} загружено. Нажми «Запустить», когда будешь готов.`;
+    activeJobId = j.id; refresh();
+  } catch (e) { upstat.textContent = 'Ошибка: ' + e.message; }
+  file.value = '';
+}
+async function startJob(id) {
+  try {
+    const r = await fetch(`/api/jobs/${id}/start`, {method:'POST'}); const j = await r.json();
+    if (!r.ok) throw new Error(j.detail || r.statusText);
+    activeJobId = id; upstat.textContent = `▶ ${j.name}: обработка запущена.`; refresh();
+  } catch (e) { upstat.textContent = 'Ошибка запуска: ' + e.message; }
+}
+function jobCard(j, records) {
+  const [label, cls] = BADGE[j.status] || [j.status, 'b-queued'];
+  const el = document.createElement('div'); el.className = 'job';
+  const meta = j.status === 'error' ? (j.error || 'ошибка') : j.status === 'done' ? `готово в ${j.finished}` : (j.stage || '…');
+  const dir = j.status === 'done' ? resultDir(j) : '';
+  el.innerHTML = `<div class="info"><div class="name"></div><div class="meta">${new Date(j.created).toLocaleString('ru')} · ${meta}</div></div><span class="badge ${cls}">${label}</span><div class="acts"><button data-log>Лог</button>${j.status === 'uploaded' && !records ? '<button class="primary" data-start>▶ Запустить</button>' : ''}${j.status === 'done' ? `<button class="dir" data-dir title="Папка с конспектом — кликни, чтобы скопировать путь"></button>` : ''}</div>`;
+  el.querySelector('.name').textContent = j.name;
+  el.querySelector('[data-log]').onclick = () => showLog(j.id);
+  const start = el.querySelector('[data-start]'); if (start) start.onclick = () => startJob(j.id);
+  const dirBtn = el.querySelector('[data-dir]');
+  if (dirBtn) { dirBtn.textContent = dir; dirBtn.dataset.path = dir; dirBtn.onclick = () => copyPath(dirBtn); }
+  return el;
+}
+let healthData = null;
+function resultDir(j) {
+  // j.out — путь к конспект.md (в контейнере /app/output/...); показываем папку на хосте
+  let d = (j.out || '').replace(/\/[^/]*$/, '');
+  const host = healthData?.output_dir;
+  if (host && d.startsWith('/app/output')) d = host + d.slice('/app/output'.length);
+  return d;
+}
+async function copyPath(btn) {
+  const p = btn.dataset.path;
+  try { await navigator.clipboard.writeText(p); }
+  catch { const ta = document.createElement('textarea'); ta.value = p; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
+  const old = btn.textContent;
+  btn.textContent = 'Скопировано ✓';
+  setTimeout(() => { btn.textContent = old; }, 1500);
+}
+function render(target, jobs, empty, records=false) {
+  target.innerHTML = '';
+  if (!jobs.length) { target.innerHTML = `<div class="empty">${empty}</div>`; return; }
+  jobs.forEach(j => target.appendChild(jobCard(j, records)));
+}
+async function refresh() {
+  try {
+    const [jobs, health] = await Promise.all([fetch('/api/jobs').then(r=>r.json()), fetch('/api/health').then(r=>r.json())]);
+    healthData = health;
+    renderStatus(health);
+    $('footer').textContent = `Очередь: ${health.queued} · Ollama: ${health.ollama_url || '—'}`;
+    render(transcribeJobs, jobs.filter(j => j.status !== 'done'), 'Загрузи видео, затем нажми «Запустить».');
+    render(recordsJobs, jobs.filter(j => j.status === 'done'), 'Готовых записей пока нет.', true);
+    const anyActive = jobs.some(j => j.status === 'running' || j.status === 'queued');
+    if (activeJobId) { const j = jobs.find(x => x.id === activeJobId); if (j?.status === 'running') showLog(activeJobId); else if (j?.status === 'done') activeJobId = null; }
+    if (anyActive) setTimeout(refresh, 3000);
+  } catch (e) { /* сервер недоступен — повторит интервал */ }
+}
+async function showLog(id) { $('logbox').classList.remove('hidden'); const r = await fetch(`/api/jobs/${id}/log`); $('logtext').textContent = await r.text(); $('logtext').scrollTop = $('logtext').scrollHeight; }
+refresh(); setInterval(refresh, 15000);
+</script>
+</body>
+</html>
