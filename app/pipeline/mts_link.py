@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import re
 import subprocess
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -90,22 +91,30 @@ def _download(url: str, output: Path, label: str, log: logging.Logger | None) ->
     if log:
         log.info("Скачивание %s...", label)
     temporary = output.with_suffix(".part")
-    with requests.get(url, stream=True, timeout=(10, 120)) as media:
-        media.raise_for_status()
-        total = int(media.headers.get("content-length", 0))
-        received = 0
-        next_progress = 0.1
-        with temporary.open("wb") as file:
-            for chunk in media.iter_content(chunk_size=1024 * 1024):
-                if not chunk:
-                    continue
-                file.write(chunk)
-                received += len(chunk)
-                if log and total and received / total >= next_progress:
-                    log.info("  %s: %d%%", label, min(100, int(received * 100 / total)))
-                    next_progress += 0.1
-    temporary.replace(output)
-    return output
+    for attempt in range(1, 4):
+        try:
+            with requests.get(url, stream=True, timeout=(30, 120)) as media:
+                media.raise_for_status()
+                total = int(media.headers.get("content-length", 0))
+                received = 0
+                next_progress = 0.1
+                with temporary.open("wb") as file:
+                    for chunk in media.iter_content(chunk_size=1024 * 1024):
+                        if not chunk:
+                            continue
+                        file.write(chunk)
+                        received += len(chunk)
+                        if log and total and received / total >= next_progress:
+                            log.info("  %s: %d%%", label, min(100, int(received * 100 / total)))
+                            next_progress += 0.1
+            temporary.replace(output)
+            return output
+        except requests.RequestException as error:
+            if attempt == 3:
+                raise
+            if log:
+                log.warning("%s: сбой сети (%s), повтор %d/3 через %d с", label, error, attempt, attempt * 2)
+            time.sleep(attempt * 2)
 
 
 def _has_audio(path: Path) -> bool:
