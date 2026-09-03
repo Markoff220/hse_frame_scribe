@@ -34,7 +34,7 @@
   .job { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:10px; display:flex; gap:14px; align-items:center; }
   .job .info { flex:1; min-width:0; }.job .name { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }.job .meta { color:var(--muted); font-size:12px; margin-top:2px; }
   .badge { font-size:11px; font-weight:700; padding:3px 9px; border-radius:20px; white-space:nowrap; }.b-uploaded,.b-queued { background:#2a2f3a; color:var(--muted); }.b-running { background:#1d2c4a; color:var(--accent); }.b-done { background:#17352a; color:var(--ok); }.b-error { background:#3a2226; color:var(--err); }
-  .acts { display:flex; gap:8px; align-items:center; } button,.btn { background:var(--card2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:6px 12px; font-size:13px; cursor:pointer; text-decoration:none; display:inline-block; } button:hover,.btn:hover { border-color:var(--accent); }.primary { background:var(--accent); border-color:var(--accent); color:white; }.primary:hover { filter:brightness(1.1); }
+   .acts { display:flex; gap:8px; align-items:center; } button,.btn { background:var(--card2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:6px 12px; font-size:13px; cursor:pointer; text-decoration:none; display:inline-block; } button:hover,.btn:hover { border-color:var(--accent); }.primary { background:var(--accent); border-color:var(--accent); color:white; }.primary:hover { filter:brightness(1.1); }.delete { color:var(--err); padding:4px 9px; font-size:18px; line-height:1; }.delete:hover { border-color:var(--err); }
   .dir { max-width:380px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; color:var(--muted); }
   pre.log { background:#0b0d11; border:1px solid var(--line); border-radius:10px; padding:14px; font-size:12px; overflow-x:auto; white-space:pre-wrap; max-height:420px; overflow-y:auto; margin:0; }
   .footer { color:var(--muted); font-size:12px; margin-top:40px; border-top:1px solid var(--line); padding-top:14px; }
@@ -163,12 +163,13 @@ function jobCard(j, records) {
   const meta = j.status === 'error' ? (j.error || 'ошибка') : j.status === 'done' ? `готово в ${j.finished}` : (j.stage || '…');
   const isMts = j.kind === 'mts_download';
   const dir = j.status === 'done' && !isMts ? resultDir(j) : '';
-  el.innerHTML = `<div class="info"><div class="name"></div><div class="meta">${new Date(j.created).toLocaleString('ru')} · ${meta}</div></div><span class="badge ${cls}">${label}</span><div class="acts"><button data-log>Лог</button>${j.status === 'uploaded' && !records ? '<button class="primary" data-start>▶ Запустить</button>' : ''}${j.status === 'done' && isMts ? `<a class="btn primary" href="/api/jobs/${j.id}/download">Скачать MP4</a>` : ''}${j.status === 'done' && !isMts ? `<button class="dir" data-dir title="Папка с конспектом — кликни, чтобы скопировать путь"></button>` : ''}</div>`;
+  el.innerHTML = `<div class="info"><div class="name"></div><div class="meta">${new Date(j.created).toLocaleString('ru')} · ${meta}</div></div><span class="badge ${cls}">${label}</span><div class="acts"><button data-log>Лог</button>${j.status === 'uploaded' && !records ? '<button class="primary" data-start>▶ Запустить</button>' : ''}${j.status === 'done' && isMts ? `<a class="btn primary" href="/api/jobs/${j.id}/download">Скачать MP4</a>` : ''}${j.status === 'done' && !isMts ? `<button class="dir" data-dir title="Папка с конспектом — кликни, чтобы скопировать путь"></button>` : ''}${isMts || records ? '<button class="delete" data-delete title="Удалить заявку" aria-label="Удалить заявку">×</button>' : ''}</div>`;
   el.querySelector('.name').textContent = j.name;
   el.querySelector('[data-log]').onclick = () => showLog(j.id);
   const start = el.querySelector('[data-start]'); if (start) start.onclick = () => startJob(j.id);
   const dirBtn = el.querySelector('[data-dir]');
   if (dirBtn) { dirBtn.textContent = dir; dirBtn.dataset.path = dir; dirBtn.onclick = () => copyPath(dirBtn); }
+  const deleteBtn = el.querySelector('[data-delete]'); if (deleteBtn) deleteBtn.onclick = () => deleteJob(j.id);
   return el;
 }
 let healthData = null;
@@ -186,6 +187,16 @@ async function copyPath(btn) {
   const old = btn.textContent;
   btn.textContent = 'Скопировано ✓';
   setTimeout(() => { btn.textContent = old; }, 1500);
+}
+async function deleteJob(id) {
+  if (!confirm('Удалить заявку из списка? Готовый файл останется на диске.')) return;
+  try {
+    const r = await fetch(`/api/jobs/${id}`, {method:'DELETE'});
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.detail || r.statusText);
+    if (activeJobId === id) activeJobId = null;
+    refresh();
+  } catch (e) { alert('Ошибка удаления: ' + e.message); }
 }
 function render(target, jobs, empty, records=false) {
   target.innerHTML = '';

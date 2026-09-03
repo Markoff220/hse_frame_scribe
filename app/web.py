@@ -325,6 +325,21 @@ def start_job(job_id: str) -> dict:
     return job
 
 
+@app.delete("/api/jobs/{job_id}")
+def delete_job(job_id: str) -> dict:
+    """Удаляет завершённую или ошибочную заявку и её лог, сохраняя результат на диске."""
+    with LOCK:
+        job = JOBS.get(job_id)
+        if not job:
+            raise HTTPException(404, f"Нет такой задачи: {job_id}")
+        if job["status"] not in {"done", "error"}:
+            raise HTTPException(409, "Можно удалить только завершённую или ошибочную задачу")
+        del JOBS[job_id]
+        _save_jobs()
+    (ROOT / "runtime" / "logs" / f"job_{job_id}.log").unlink(missing_ok=True)
+    return {"ok": True}
+
+
 @app.get("/api/jobs")
 def jobs() -> list[dict]:
     with LOCK:
