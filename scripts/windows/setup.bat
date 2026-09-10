@@ -7,7 +7,7 @@ echo.
 
 where python >nul 2>nul
 if errorlevel 1 (
-  echo [ОШИБКА] Python не найден. Установи Python 3.10+ с python.org (галочка "Add to PATH") и повтори.
+  echo [ОШИБКА] Python не найден. Установи Python 3.13+ с python.org (галочка "Add to PATH") и повтори.
   pause
   exit /b 1
 )
@@ -51,15 +51,8 @@ if errorlevel 1 (
   echo [4/5] Ollama уже есть
 )
 
-echo [5/5] Модели Ollama (первый раз ~14 ГБ):
-echo   - qwen2.5vl:7b  (анализ кадров, ~5 ГБ)
-echo   - qwen2.5:14b   (сборка конспекта, ~9 ГБ)
-ollama pull qwen2.5vl:7b
-ollama pull qwen2.5:14b-instruct-q4_K_M
-
-echo.
-echo === Самопроверка (GigaAM скачает модель ~1 ГБ, прогонит тест) ===
-call venv\Scripts\python.exe app\pipeline\main.py selftest
+echo [5/5] Модели не скачиваются при установке.
+echo Запусти web-интерфейс и выбери GigaAM и Qwen в разделе «Настройки моделей».
 echo.
 echo Готово! Дальше:
 echo   - перетащи видео на scripts\windows\process.bat, ИЛИ

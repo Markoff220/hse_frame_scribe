@@ -114,6 +114,26 @@ scripts/linux/build-pyapp.sh
 
 Получится `dist/VideoNotes-linux-x86_64.tar.gz`. Распакуйте его и запустите `./install.sh`; launcher установится в `~/.local/bin/videonotes` и появится в меню приложений.
 
+## Windows-дистрибутив
+
+Сборка выполняется нативно на Windows x86_64 через PowerShell и требует Python 3.13+ с `setuptools`, Rust/Cargo и `tar`:
+
+```powershell
+.\scripts\windows\build-pyapp.ps1
+```
+
+Результат: `dist\VideoNotes-windows-x86_64.zip`. После распаковки выполните `install.ps1`; приложение появится в меню «Пуск», а данные будут храниться в `%LOCALAPPDATA%\VideoNotes`.
+
+## macOS-дистрибутив
+
+Сборка выполняется нативно на целевом Mac (`arm64` или `x86_64`) и требует Python 3.13+ с `setuptools`, Xcode Command Line Tools, Rust/Cargo и `curl`:
+
+```bash
+scripts/macos/build-pyapp.sh
+```
+
+Результат: `dist/VideoNotes-macos-<arch>.zip`. В архиве находится `VideoNotes.app`; `./install.sh` скопирует его в `/Applications`. Данные хранятся в `~/Library/Application Support/VideoNotes`.
+
 ## Настройка
 
 `config/config.json` используется в локальном режиме, `config/docker.json` — в Docker. Пути в `output.dir` разрешаются относительно корня проекта, а не текущей директории терминала.

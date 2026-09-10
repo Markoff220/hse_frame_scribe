@@ -19,6 +19,8 @@
 - `selftest` загружает около 1 ГБ весов GigaAM при первом запуске и проверяет Ollama. Для обычного режима нужны Ollama и обе настроенные модели; `llm.provider: "stub"` отключает эту зависимость для отладки.
 - Docker: `docker compose up -d --build` не скачивает модели. Их выбирают, скачивают и применяют в разделе «Настройки моделей». GPU-блоки `deploy` требуют NVIDIA Container Toolkit; для CPU их нужно закомментировать.
 - Linux-дистрибутив: `scripts/linux/build-pyapp.sh` собирает PyApp launcher для x86_64. Он использует `~/.local/share/VideoNotes` или `$XDG_DATA_HOME/VideoNotes`, требует системные `ffmpeg` и Ollama, а модели скачивает из UI.
+- Windows-дистрибутив: `scripts/windows/build-pyapp.ps1` собирается нативно на Windows x86_64; данные лежат в `%LOCALAPPDATA%\VideoNotes`.
+- macOS-дистрибутив: `scripts/macos/build-pyapp.sh` собирается нативно на целевой архитектуре; данные лежат в `~/Library/Application Support/VideoNotes`.
 - `requirements.txt` не содержит `pytest` и `httpx`: перед тестами установите их отдельно. Из корня: `PYTHONPATH=app python -m pytest app/tests/`; отдельный API-тест: `PYTHONPATH=app python -m pytest app/tests/test_manual_start.py -q`.
 - CI, линтер, typecheck и форматтер в репозитории не настроены.
 

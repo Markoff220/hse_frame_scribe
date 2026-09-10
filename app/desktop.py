@@ -1,6 +1,7 @@
 """Локальный launcher упакованного VideoNotes."""
 import os
 import shutil
+import sys
 import threading
 import webbrowser
 from importlib import resources
@@ -8,6 +9,10 @@ from pathlib import Path
 
 
 def _data_dir() -> Path:
+    if sys.platform == "win32":
+        return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "VideoNotes"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "VideoNotes"
     return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "VideoNotes"
 
 
