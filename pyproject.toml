@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=84"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "videonotes"
+version = "0.1.1"
+description = "Локальное приложение для создания конспектов из видео"
+requires-python = ">=3.13"
+dependencies = [
+  "torch==2.14.0",
+  "torchaudio==2.11.0",
+  "gigaam @ https://github.com/salute-developers/GigaAM/archive/refs/heads/main.zip",
+  "silero-vad==6.2.1",
+  "soundfile==0.14.0",
+  "numpy==2.5.3",
+  "requests==2.34.2",
+  "tqdm==4.70.0",
+  "fastapi==0.141.1",
+  "uvicorn==0.52.4",
+  "python-multipart==0.0.32",
+]
+
+[project.scripts]
+videonotes = "videonotes.desktop:main"
+
+[tool.setuptools]
+packages = ["videonotes", "videonotes.pipeline"]
+
+[tool.setuptools.package-dir]
+videonotes = "app"
+
+[tool.setuptools.package-data]
+videonotes = ["defaults/*.json", "web/*.html"]

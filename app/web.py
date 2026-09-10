@@ -540,7 +540,10 @@ def job_download(job_id: str) -> FileResponse:
     return FileResponse(dest, media_type="text/markdown", filename="конспект.md")
 
 
+def run(port: int = 8090, host: str = "0.0.0.0") -> None:
+    log.info("VideoNotes web: http://%s:%d", host, port)
+    uvicorn.run(app, host=host, port=port, log_level="warning")
+
+
 if __name__ == "__main__":
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8090
-    log.info("VideoNotes web: http://0.0.0.0:%d", port)
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
+    run(port=int(sys.argv[1]) if len(sys.argv) > 1 else 8090)

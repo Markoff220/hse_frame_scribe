@@ -25,6 +25,11 @@ runtime/tmp/*
 # Локальная конфигурация окружения (шаблон — .env.example)
 .env
 
+# Артефакты сборки дистрибутивов
+dist/
+build/
+*.egg-info/
+
 # Служебное
 .opencode/
 .DS_Store

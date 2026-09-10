@@ -1,11 +1,11 @@
-torch==2.11.0
+torch==2.14.0
 torchaudio==2.11.0
 gigaam @ https://github.com/salute-developers/GigaAM/archive/refs/heads/main.zip
-silero-vad
-soundfile
-numpy
-requests
-tqdm
-fastapi
-uvicorn
-python-multipart
+silero-vad==6.2.1
+soundfile==0.14.0
+numpy==2.5.3
+requests==2.34.2
+tqdm==4.70.0
+fastapi==0.141.1
+uvicorn==0.52.4
+python-multipart==0.0.32

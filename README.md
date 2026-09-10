@@ -100,6 +100,20 @@ python3 -m venv .venv
 .venv/bin/python app/web.py 8090
 ```
 
+## Linux-дистрибутив
+
+Для Linux x86_64 доступна сборка локального launcher-приложения на PyApp. Оно запускает интерфейс в браузере на `127.0.0.1:8090`, открывает его автоматически и хранит данные в `~/.local/share/VideoNotes` (или в `$XDG_DATA_HOME/VideoNotes`). Docker для этого режима не нужен. При первом запуске PyApp скачивает Python 3.13 и Python-зависимости.
+
+На компьютере пользователя должны быть установлены `ffmpeg` и [Ollama](https://ollama.com/download/linux). Модели не входят в архив: их выбирают и скачивают через «Настройки моделей» после первого запуска.
+
+Сборка архива выполняется на Linux x86_64 и требует `python3` с `setuptools`, Rust/Cargo и `curl`:
+
+```bash
+scripts/linux/build-pyapp.sh
+```
+
+Получится `dist/VideoNotes-linux-x86_64.tar.gz`. Распакуйте его и запустите `./install.sh`; launcher установится в `~/.local/bin/videonotes` и появится в меню приложений.
+
 ## Настройка
 
 `config/config.json` используется в локальном режиме, `config/docker.json` — в Docker. Пути в `output.dir` разрешаются относительно корня проекта, а не текущей директории терминала.

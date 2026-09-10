@@ -15,7 +15,8 @@ def _find_root() -> Path:
     return here.parent.parent  # фолбэк: три уровня вверх от common.py
 
 
-ROOT = _find_root()  # корень проекта (04_VideoNotes)
+_data_root = os.environ.get("VIDEONOTES_DATA_DIR")
+ROOT = Path(_data_root).expanduser().resolve() if _data_root else _find_root()
 CONFIG_PATH = Path(os.environ.get("VIDEONOTES_CONFIG", str(ROOT / "config" / "config.json")))
 VIDEO_EXTS = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".ts", ".flv", ".wmv", ".mpg", ".mpeg"}
 
