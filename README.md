@@ -53,8 +53,6 @@ VideoNotes превращает видео в Markdown-конспект для O
 
    ```dotenv
    ASR_DEVICE=cuda
-   VLM_MODEL=qwen2.5vl:7b
-   LLM_MODEL=qwen2.5:14b-instruct-q4_K_M
    ```
 
 3. Запустите стек:
@@ -63,9 +61,9 @@ VideoNotes превращает видео в Markdown-конспект для O
    docker compose up -d --build
    ```
 
-4. Откройте `http://localhost:8090`, загрузите видео и нажмите «Запустить».
+4. Откройте `http://localhost:8090`, перейдите в «Настройки моделей», скачайте и примените ASR, VLM и LLM. Затем загрузите видео и нажмите «Запустить».
 
-Ollama поднимается внутри стека. При первом запуске сервис `ollama-init` скачает выбранные VLM и LLM, а GigaAM скачает свои веса при первой транскрипции.
+Ollama поднимается внутри стека, но модели не скачиваются при сборке или запуске Compose. Веса GigaAM и Qwen загружаются только по явному действию в веб-интерфейсе и сохраняются в Docker volumes.
 
 ### CPU-режим Docker
 
@@ -74,8 +72,6 @@ Ollama поднимается внутри стека. При первом за�
 
    ```dotenv
    ASR_DEVICE=cpu
-   VLM_MODEL=qwen2.5vl:3b
-   LLM_MODEL=qwen2.5:3b
    ```
 
 3. Выполните `docker compose up -d --build`.
@@ -103,22 +99,6 @@ python3 -m venv .venv
 ```bash
 .venv/bin/python app/web.py 8090
 ```
-
-### Скачать запись экрана со звуком из МТС Линк
-
-Для публичной записи МТС Линк можно скачать демонстрацию экрана и сведённый звук конференции в один MP4. Команда использует access-token из shared-ссылки; закрытые записи и другие методы обхода доступа не поддерживаются.
-
-```bash
-.venv/bin/python app/pipeline/main.py download-mts "https://my.mts-link.ru/j/.../record-new/<id>/<token>"
-```
-
-В Docker:
-
-```bash
-docker compose exec pipeline python pipeline/main.py download-mts "https://my.mts-link.ru/j/.../record-new/<id>/<token>"
-```
-
-MP4 сохраняется в `runtime/tmp/mts_link/<id>/recording.mp4`. Промежуточные screen-share и конференц-потоки остаются рядом в той же папке.
 
 ## Настройка
 
@@ -149,8 +129,6 @@ MP4 сохраняется в `runtime/tmp/mts_link/<id>/recording.mp4`. Про�
 | Переменная | Назначение |
 | --- | --- |
 | `OLLAMA_URL` | URL Ollama; по умолчанию `http://ollama:11434` внутри стека |
-| `VLM_MODEL` | Модель для анализа кадров |
-| `LLM_MODEL` | Модель для итогового конспекта |
 | `ASR_DEVICE` | Устройство GigaAM: `cuda`, `cpu` или `auto` |
 | `PORT` | Порт web-интерфейса |
 | `PYTORCH_INDEX` | Индекс пакетов PyTorch при сборке образа |
@@ -168,17 +146,21 @@ MP4 сохраняется в `runtime/tmp/mts_link/<id>/recording.mp4`. Про�
 
 - Проверка локального стека: `python app/pipeline/main.py selftest`.
 - Статус web-стека: `GET /api/health`.
+- Каталог и состояние моделей: `GET /api/models`.
 - Логи задач: `runtime/logs/job_<id>.log`.
 - В интерфейсе загрузка только создаёт задачу; её нужно явно запустить кнопкой «Запустить». Задачи выполняются по одной.
+- Выбранные модели сохраняются в `runtime/tmp/model_settings.json`; задача фиксирует их набор при запуске.
 
 ## API
 
 | Метод | Endpoint | Назначение |
 | --- | --- | --- |
 | `POST` | `/api/upload` | Загрузить видео |
-| `POST` | `/api/mts-link` | Поставить в очередь запись экрана со звуком из публичной ссылки МТС Линк |
 | `GET` | `/api/jobs` | Получить очередь и статусы |
 | `POST` | `/api/jobs/{id}/start` | Поставить загруженную задачу в очередь |
 | `GET` | `/api/jobs/{id}/log` | Получить лог задачи |
 | `GET` | `/api/jobs/{id}/download` | Скачать готовый конспект |
 | `GET` | `/api/health` | Проверить ASR, Ollama, GPU и каталог вывода |
+| `GET` | `/api/models` | Каталог, установленные и выбранные модели |
+| `POST` | `/api/models/pull` | Запустить загрузку модели |
+| `PUT` | `/api/settings/models` | Применить скачанный набор моделей |

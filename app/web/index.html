@@ -27,15 +27,16 @@
   .drop .hint,.uploading,.empty { color:var(--muted); font-size:13px; margin-top:6px; }
    .drop input { display:none; }
    .uploading { min-height:22px; margin-top:10px; }
-   .mts { margin-top:16px; padding:16px; border:1px solid var(--line); border-radius:12px; background:var(--card); }
-   .mts strong { display:block; font-size:14px; }.mts small { color:var(--muted); }
-   .mts form { display:flex; gap:8px; margin-top:10px; }.mts input { flex:1; min-width:0; background:#0b0d11; border:1px solid var(--line); border-radius:8px; color:var(--text); padding:8px 10px; font:inherit; }.mts input:focus { outline:0; border-color:var(--accent); }
   h2 { font-size:15px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin:28px 0 12px; }
   .job { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:10px; display:flex; gap:14px; align-items:center; }
   .job .info { flex:1; min-width:0; }.job .name { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }.job .meta { color:var(--muted); font-size:12px; margin-top:2px; }
   .badge { font-size:11px; font-weight:700; padding:3px 9px; border-radius:20px; white-space:nowrap; }.b-uploaded,.b-queued { background:#2a2f3a; color:var(--muted); }.b-running { background:#1d2c4a; color:var(--accent); }.b-done { background:#17352a; color:var(--ok); }.b-error { background:#3a2226; color:var(--err); }
    .acts { display:flex; gap:8px; align-items:center; } button,.btn { background:var(--card2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:6px 12px; font-size:13px; cursor:pointer; text-decoration:none; display:inline-block; } button:hover,.btn:hover { border-color:var(--accent); }.primary { background:var(--accent); border-color:var(--accent); color:white; }.primary:hover { filter:brightness(1.1); }.delete { color:var(--err); padding:4px 9px; font-size:18px; line-height:1; }.delete:hover { border-color:var(--err); }
-  .dir { max-width:380px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; color:var(--muted); }
+   .dir { max-width:380px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; color:var(--muted); }
+   .model { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:10px; }
+   .model h3 { margin:0 0 4px; font-size:15px; }.model p,.model .model-status { color:var(--muted); font-size:13px; margin:0 0 12px; }
+   .model-row { display:flex; gap:8px; align-items:center; }.model select { flex:1; min-width:0; background:#0b0d11; border:1px solid var(--line); border-radius:8px; color:var(--text); padding:8px 10px; font:inherit; }
+   .model .model-status.ok { color:var(--ok); }.model .model-status.err { color:var(--err); }.settings-actions { display:flex; gap:8px; align-items:center; margin-top:18px; }.settings-message { color:var(--muted); font-size:13px; }
   pre.log { background:#0b0d11; border:1px solid var(--line); border-radius:10px; padding:14px; font-size:12px; overflow-x:auto; white-space:pre-wrap; max-height:420px; overflow-y:auto; margin:0; }
   .footer { color:var(--muted); font-size:12px; margin-top:40px; border-top:1px solid var(--line); padding-top:14px; }
 </style>
@@ -52,8 +53,8 @@
 
   <nav class="tabs" aria-label="Разделы">
     <button class="tab active" data-tab="transcribe">Транскрибация</button>
-    <button class="tab" data-tab="mts">МТС Линк</button>
     <button class="tab" data-tab="records">Мои записи</button>
+    <button class="tab" data-tab="settings">Настройки моделей</button>
   </nav>
 
   <section class="panel" id="panel-transcribe">
@@ -67,20 +68,16 @@
     <div id="transcribe-jobs"><div class="empty">Загрузи видео, затем нажми «Запустить».</div></div>
   </section>
 
-  <section class="panel hidden" id="panel-mts">
-    <div class="mts">
-      <strong>Запись экрана со звуком из МТС Линк</strong>
-      <small>Вставь публичную ссылку на запись. Скачается экран и сведённый звук конференции.</small>
-      <form id="mts-form"><input id="mts-url" type="url" placeholder="https://my.mts-link.ru/j/.../record-new/..." required><button class="primary">Скачать MP4</button></form>
-      <div class="uploading" id="mtsstat"></div>
-    </div>
-    <h2>Активные загрузки</h2>
-    <div id="mts-jobs"><div class="empty">Загрузок пока нет.</div></div>
-  </section>
-
   <section class="panel hidden" id="panel-records">
     <h2>Готовые записи</h2>
     <div id="records-jobs"><div class="empty">Готовых записей пока нет.</div></div>
+  </section>
+
+  <section class="panel hidden" id="panel-settings">
+    <h2>Модели обработки</h2>
+    <p class="empty">Сначала скачай нужные модели. Применить можно только полностью скачанный набор.</p>
+    <div id="model-settings"><div class="empty">Загрузка списка моделей…</div></div>
+    <div class="settings-actions"><button class="primary" id="save-models">Применить модели</button><span class="settings-message" id="model-message"></span></div>
   </section>
 
   <div id="logbox" class="hidden" style="margin-top:26px"><h2>Лог</h2><pre class="log" id="logtext"></pre></div>
@@ -88,8 +85,9 @@
 </div>
 <script>
 const $ = id => document.getElementById(id);
-const drop = $('drop'), file = $('file'), upstat = $('upstat'), mtsForm = $('mts-form'), mtsUrl = $('mts-url'), mtsStat = $('mtsstat'), transcribeJobs = $('transcribe-jobs'), mtsJobs = $('mts-jobs'), recordsJobs = $('records-jobs');
+const drop = $('drop'), file = $('file'), upstat = $('upstat'), transcribeJobs = $('transcribe-jobs'), recordsJobs = $('records-jobs'), modelSettings = $('model-settings'), modelMessage = $('model-message');
 let activeJobId = null;
+let modelsData = null;
 const BADGE = { uploaded:['Готово к запуску','b-uploaded'], queued:['В очереди','b-queued'], running:['Обработка','b-running'], done:['Готово','b-done'], error:['Ошибка','b-error'] };
 
 function st(id, cls, label, title) {
@@ -111,7 +109,7 @@ function renderStatus(h) {
     const m = h[key] || {};
     st(id, m.status === 'ok' ? 'ok' : m.status === 'missing' ? 'err' : '',
        m.status === 'ok' ? `${what} · ${m.model}` : m.status === 'missing' ? `${what} · модель не скачана` : `${what} · Ollama недоступна`,
-       m.status === 'ok' ? 'Модель загружена в Ollama' : m.status === 'missing' ? `Ollama работает, но модель ${m.model} не загружена (ollama-init её подтянет)` : `Ollama не отвечает по ${h.ollama_url || 'адресу'}`);
+       m.status === 'ok' ? 'Модель загружена в Ollama' : m.status === 'missing' ? `Модель ${m.model} ещё не скачана` : `Ollama не отвечает по ${h.ollama_url || 'адресу'}`);
   }
 }
 
@@ -119,6 +117,7 @@ document.querySelectorAll('.tab').forEach(tab => tab.onclick = () => {
   document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === tab));
   document.querySelectorAll('.panel').forEach(x => x.classList.toggle('hidden', x.id !== `panel-${tab.dataset.tab}`));
   history.replaceState(null, '', `#${tab.dataset.tab}`);
+  if (tab.dataset.tab === 'settings') refreshModels();
 });
 const _initTab = location.hash.replace('#', '');
 if (_initTab && document.querySelector(`.tab[data-tab="${_initTab}"]`)) document.querySelector(`.tab[data-tab="${_initTab}"]`).click();
@@ -139,17 +138,6 @@ async function upload(f) {
   } catch (e) { upstat.textContent = 'Ошибка: ' + e.message; }
   file.value = '';
 }
-mtsForm.addEventListener('submit', async e => {
-  e.preventDefault();
-  mtsStat.textContent = 'Добавление задачи…';
-  try {
-    const r = await fetch('/api/mts-link', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url:mtsUrl.value})});
-    const j = await r.json();
-    if (!r.ok) throw new Error(j.detail || r.statusText);
-    mtsStat.textContent = `✓ ${j.name}: загрузка поставлена в очередь.`;
-    mtsUrl.value = ''; activeJobId = j.id; refresh();
-  } catch (e) { mtsStat.textContent = 'Ошибка: ' + e.message; }
-});
 async function startJob(id) {
   try {
     const r = await fetch(`/api/jobs/${id}/start`, {method:'POST'}); const j = await r.json();
@@ -157,13 +145,60 @@ async function startJob(id) {
     activeJobId = id; upstat.textContent = `▶ ${j.name}: обработка запущена.`; refresh();
   } catch (e) { upstat.textContent = 'Ошибка запуска: ' + e.message; }
 }
+function modelRoleTitle(role) { return {asr:'Распознавание речи (ASR)', vlm:'Анализ кадров (VLM)', llm:'Конспект (LLM)'}[role]; }
+function modelSettingKey(role) { return `${role}_model`; }
+function pullFor(role, model) {
+  modelMessage.textContent = `Скачивание ${model} запущено…`;
+  fetch('/api/models/pull', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({role, model})})
+    .then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.detail || r.statusText); refreshModels(); })
+    .catch(e => { modelMessage.textContent = 'Ошибка: ' + e.message; });
+}
+function renderModels(data) {
+  modelsData = data;
+  modelSettings.innerHTML = '';
+  for (const role of ['asr', 'vlm', 'llm']) {
+    const key = modelSettingKey(role), selected = data.settings[key];
+    const card = document.createElement('div'); card.className = 'model';
+    const title = document.createElement('h3'); title.textContent = modelRoleTitle(role); card.appendChild(title);
+    const info = document.createElement('p'); const item = data.catalog[role].find(x => x.name === selected); info.textContent = item ? `${item.size} · ${item.note}` : ''; card.appendChild(info);
+    const row = document.createElement('div'); row.className = 'model-row';
+    const select = document.createElement('select'); select.id = `model-${role}`;
+    data.catalog[role].forEach(item => { const option = document.createElement('option'); option.value = item.name; option.textContent = `${item.label} (${item.size})`; option.selected = item.name === selected; select.appendChild(option); });
+    const button = document.createElement('button'); button.textContent = 'Скачать';
+    const status = document.createElement('div'); status.className = 'model-status';
+    const active = data.pulls.find(p => p.model === select.value && p.status !== 'success' && p.status !== 'error');
+    const installed = data.installed[role][select.value];
+    if (active) { const percent = active.total ? ` ${Math.floor(active.completed * 100 / active.total)}%` : ''; status.textContent = `${active.detail || active.status}${percent}`; button.disabled = true; }
+    else if (installed === true || installed === 'ok') { status.textContent = 'Скачана'; status.classList.add('ok'); button.disabled = true; }
+    else if (installed === 'partial') { status.textContent = 'Скачивание GigaAM не завершено'; status.classList.add('err'); }
+    else { status.textContent = role === 'asr' ? 'Не скачана' : data.ollama_available ? 'Не скачана' : 'Ollama недоступна'; button.disabled = !data.ollama_available && role !== 'asr'; }
+    select.onchange = () => renderModels({...data, settings: {...data.settings, [key]: select.value}});
+    button.onclick = () => pullFor(role, select.value);
+    row.append(select, button); card.append(row, status); modelSettings.appendChild(card);
+  }
+}
+async function refreshModels() {
+  try {
+    const r = await fetch('/api/models'); const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || r.statusText);
+    renderModels(data);
+    if (data.pulls.some(p => p.status === 'queued' || p.status === 'downloading')) setTimeout(refreshModels, 1500);
+  } catch (e) { modelMessage.textContent = 'Не удалось получить модели: ' + e.message; }
+}
+$('save-models').onclick = async () => {
+  const payload = Object.fromEntries(['asr','vlm','llm'].map(role => [modelSettingKey(role), $(`model-${role}`).value]));
+  try {
+    const r = await fetch('/api/settings/models', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}); const j = await r.json();
+    if (!r.ok) throw new Error(j.detail || r.statusText);
+    modelMessage.textContent = 'Выбранные модели будут применены к следующим задачам.'; refresh(); refreshModels();
+  } catch (e) { modelMessage.textContent = 'Ошибка: ' + e.message; }
+};
 function jobCard(j, records) {
   const [label, cls] = BADGE[j.status] || [j.status, 'b-queued'];
   const el = document.createElement('div'); el.className = 'job';
   const meta = j.status === 'error' ? (j.error || 'ошибка') : j.status === 'done' ? `готово в ${j.finished}` : (j.stage || '…');
-  const isMts = j.kind === 'mts_download';
-  const dir = j.status === 'done' && !isMts ? resultDir(j) : '';
-  el.innerHTML = `<div class="info"><div class="name"></div><div class="meta">${new Date(j.created).toLocaleString('ru')} · ${meta}</div></div><span class="badge ${cls}">${label}</span><div class="acts"><button data-log>Лог</button>${j.status === 'uploaded' && !records ? '<button class="primary" data-start>▶ Запустить</button>' : ''}${j.status === 'done' && isMts ? `<a class="btn primary" href="/api/jobs/${j.id}/download">Скачать MP4</a>` : ''}${j.status === 'done' && !isMts ? `<button class="dir" data-dir title="Папка с конспектом — кликни, чтобы скопировать путь"></button>` : ''}${isMts || records ? '<button class="delete" data-delete title="Удалить заявку" aria-label="Удалить заявку">×</button>' : ''}</div>`;
+  const dir = j.status === 'done' ? resultDir(j) : '';
+  el.innerHTML = `<div class="info"><div class="name"></div><div class="meta">${new Date(j.created).toLocaleString('ru')} · ${meta}</div></div><span class="badge ${cls}">${label}</span><div class="acts"><button data-log>Лог</button>${j.status === 'uploaded' && !records ? '<button class="primary" data-start>▶ Запустить</button>' : ''}${j.status === 'done' ? `<button class="dir" data-dir title="Папка с конспектом — кликни, чтобы скопировать путь"></button>` : ''}${(j.status === 'uploaded' || records) ? '<button class="delete" data-delete title="Удалить заявку" aria-label="Удалить заявку">×</button>' : ''}</div>`;
   el.querySelector('.name').textContent = j.name;
   el.querySelector('[data-log]').onclick = () => showLog(j.id);
   const start = el.querySelector('[data-start]'); if (start) start.onclick = () => startJob(j.id);
@@ -189,7 +224,7 @@ async function copyPath(btn) {
   setTimeout(() => { btn.textContent = old; }, 1500);
 }
 async function deleteJob(id) {
-  if (!confirm('Удалить заявку из списка? Готовый файл останется на диске.')) return;
+  if (!confirm('Удалить заявку из списка? Подготовленное видео будет удалено, готовый конспект останется на диске.')) return;
   try {
     const r = await fetch(`/api/jobs/${id}`, {method:'DELETE'});
     const j = await r.json();
@@ -209,8 +244,7 @@ async function refresh() {
     healthData = health;
     renderStatus(health);
     $('footer').textContent = `Очередь: ${health.queued} · Ollama: ${health.ollama_url || '—'}`;
-    render(transcribeJobs, jobs.filter(j => j.status !== 'done' && j.kind !== 'mts_download'), 'Загрузи видео, затем нажми «Запустить».');
-    render(mtsJobs, jobs.filter(j => j.status !== 'done' && j.kind === 'mts_download'), 'Загрузок пока нет.');
+    render(transcribeJobs, jobs.filter(j => j.status !== 'done'), 'Загрузи видео, затем нажми «Запустить».');
     render(recordsJobs, jobs.filter(j => j.status === 'done'), 'Готовых записей пока нет.', true);
     const anyActive = jobs.some(j => j.status === 'running' || j.status === 'queued');
     if (activeJobId) { const j = jobs.find(x => x.id === activeJobId); if (j?.status === 'running') showLog(activeJobId); else if (j?.status === 'done') activeJobId = null; }
@@ -219,6 +253,7 @@ async function refresh() {
 }
 async function showLog(id) { $('logbox').classList.remove('hidden'); const r = await fetch(`/api/jobs/${id}/log`); $('logtext').textContent = await r.text(); $('logtext').scrollTop = $('logtext').scrollHeight; }
 refresh(); setInterval(refresh, 15000);
+refreshModels();
 </script>
 </body>
 </html>

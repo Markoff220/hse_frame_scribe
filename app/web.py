@@ -4,7 +4,10 @@
          docker compose up -d   (в контейнере)
 
 API:
-  GET  /                     — UI
+   GET  /                     — UI
+   GET  /api/models           — каталог и состояние моделей
+   POST /api/models/pull      — скачать модель
+   PUT  /api/settings/models  — применить модели
   POST /api/upload           — загрузка видео (multipart, поле "file")
   GET  /api/jobs             — список задач
   GET  /api/jobs/{id}/log    — лог задачи
@@ -19,6 +22,7 @@ import re
 import sys
 import threading
 import uuid
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 
@@ -36,6 +40,64 @@ app = FastAPI(title="VideoNotes")
 cfg = load_config()
 log = setup_logging(ROOT / "runtime" / "logs" / f"web_{datetime.now():%Y%m%d}.log")
 
+MODEL_CATALOG = {
+    "asr": [
+        {"name": "v3_e2e_rnnt", "label": "GigaAM v3 E2E RNN-T", "size": "~1 ГБ", "note": "Рекомендуется: пунктуация и нормализация текста."},
+        {"name": "v3_e2e_ctc", "label": "GigaAM v3 E2E CTC", "size": "~1 ГБ", "note": "Альтернативная end-to-end модель."},
+        {"name": "v3_ctc", "label": "GigaAM v3 CTC", "size": "~1 ГБ", "note": "Базовая CTC-модель распознавания."},
+    ],
+    "vlm": [
+        {"name": "qwen2.5vl:3b", "label": "Qwen 2.5 VL 3B", "size": "~3 ГБ", "note": "Экономный анализ кадров."},
+        {"name": "qwen2.5vl:7b", "label": "Qwen 2.5 VL 7B", "size": "~6 ГБ", "note": "Более точный анализ кадров."},
+    ],
+    "llm": [
+        {"name": "qwen2.5:3b", "label": "Qwen 2.5 3B", "size": "~2 ГБ", "note": "Быстрый, экономный конспект."},
+        {"name": "qwen2.5:7b", "label": "Qwen 2.5 7B", "size": "~4.7 ГБ", "note": "Баланс качества и скорости."},
+        {"name": "qwen2.5:14b-instruct-q4_K_M", "label": "Qwen 2.5 14B Instruct Q4", "size": "~9 ГБ", "note": "Максимальное качество конспекта."},
+    ],
+}
+SETTINGS_FILE = ROOT / "runtime" / "tmp" / "model_settings.json"
+MODEL_PULLS: dict[str, dict] = {}
+MODEL_LOCK = threading.Lock()
+
+
+def _catalog_names(role: str) -> set[str]:
+    return {item["name"] for item in MODEL_CATALOG[role]}
+
+
+def _load_model_settings() -> dict:
+    defaults = {
+        "asr_model": cfg["asr"].get("model", "v3_e2e_rnnt"),
+        "vlm_model": cfg["llm"].get("vlm_model", "qwen2.5vl:3b"),
+        "llm_model": cfg["llm"].get("llm_model", "qwen2.5:3b"),
+    }
+    try:
+        saved = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return defaults
+    for key, role in (("asr_model", "asr"), ("vlm_model", "vlm"), ("llm_model", "llm")):
+        if saved.get(key) in _catalog_names(role):
+            defaults[key] = saved[key]
+    return defaults
+
+
+MODEL_SETTINGS = _load_model_settings()
+
+
+def _apply_model_settings(target: dict, settings: dict) -> dict:
+    target["asr"]["model"] = settings["asr_model"]
+    target["llm"]["vlm_model"] = settings["vlm_model"]
+    target["llm"]["llm_model"] = settings["llm_model"]
+    return target
+
+
+_apply_model_settings(cfg, MODEL_SETTINGS)
+
+
+def _save_model_settings(settings: dict) -> None:
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    SETTINGS_FILE.write_text(json.dumps(settings, ensure_ascii=False, indent=2), encoding="utf-8")
+
 
 def _ollama_tags(url: str) -> tuple[bool, set[str]]:
     """(Ollama доступен?, множество имён моделей)."""
@@ -48,6 +110,16 @@ def _ollama_tags(url: str) -> tuple[bool, set[str]]:
         return False, set()
 
 
+def _ollama_models(url: str) -> tuple[bool, list[dict]]:
+    try:
+        import requests
+        response = requests.get(f"{url.rstrip('/')}/api/tags", timeout=5)
+        response.raise_for_status()
+        return True, response.json().get("models", [])
+    except Exception:
+        return False, []
+
+
 def _model_present(need: str, present: set[str]) -> bool:
     if not need:
         return False
@@ -58,9 +130,9 @@ def _model_present(need: str, present: set[str]) -> bool:
     return False
 
 
-def _asr_status() -> str:
+def _asr_status(model: str | None = None) -> str:
     """Статус весов GigaAM: ok | partial (скачана часть/обрубились) | missing."""
-    model = cfg["asr"].get("model", "v3_e2e_rnnt")
+    model = model or cfg["asr"].get("model", "v3_e2e_rnnt")
     model_dir = Path(cfg["asr"].get("model_dir", "runtime/models/gigaam"))
     if not model_dir.is_absolute():
         model_dir = ROOT / model_dir
@@ -93,17 +165,17 @@ def _gpu_info() -> dict:
 
 
 def _log_ollama_status() -> None:
-    """Старт: показать, доступен ли Ollama и загружены ли нужные модели (не блокирует сервис)."""
+    """Старт: показать состояние Ollama, не блокируя сервис."""
     url = cfg["llm"].get("ollama_url", "").rstrip("/")
     ok, present = _ollama_tags(url)
     if not ok:
-        log.warning("Ollama пока недоступна (%s) — ожидается сервис ollama/ollama-init", url)
+        log.warning("Ollama пока недоступна (%s)", url)
         return
     missing = [n for n in sorted({cfg["llm"].get("vlm_model"), cfg["llm"].get("llm_model")})
                if not _model_present(n, present)]
     log.info("Ollama доступна: %s | модели: %s", url, ", ".join(sorted(present)) or "(нет)")
     if missing:
-        log.warning("Модели ещё не готовы (ollama-init должен их подтянуть): %s", ", ".join(missing))
+        log.warning("Выбранные модели ещё не скачаны: %s", ", ".join(missing))
     else:
         log.info("Все нужные модели на месте")
 
@@ -153,6 +225,78 @@ def _now() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _start_model_pull(role: str, model: str) -> dict:
+    operation = {
+        "id": uuid.uuid4().hex[:8],
+        "role": role,
+        "model": model,
+        "status": "queued",
+        "detail": "В очереди",
+        "completed": 0,
+        "total": 0,
+        "error": None,
+    }
+    with MODEL_LOCK:
+        if any(item["model"] == model and item["status"] in {"queued", "downloading"}
+               for item in MODEL_PULLS.values()):
+            raise HTTPException(409, "Эта модель уже скачивается")
+        MODEL_PULLS[operation["id"]] = operation
+    threading.Thread(target=_pull_model, args=(operation["id"],), daemon=True).start()
+    return operation
+
+
+def _pull_model(operation_id: str) -> None:
+    operation = MODEL_PULLS[operation_id]
+    operation["status"] = "downloading"
+    try:
+        if operation["role"] == "asr":
+            from asr import GigaAMASR
+            asr_cfg = deepcopy(cfg["asr"])
+            asr_cfg["model"] = operation["model"]
+            asr = GigaAMASR(asr_cfg, log)
+            asr.load()
+            asr.unload()
+        else:
+            import requests
+            response = requests.post(
+                f"{cfg['llm']['ollama_url'].rstrip('/')}/api/pull",
+                json={"model": operation["model"], "stream": True}, stream=True, timeout=(5, None),
+            )
+            response.raise_for_status()
+            for line in response.iter_lines():
+                if not line:
+                    continue
+                update = json.loads(line)
+                operation["detail"] = update.get("status", operation["detail"])
+                operation["completed"] = update.get("completed", operation["completed"])
+                operation["total"] = update.get("total", operation["total"])
+                if update.get("error"):
+                    raise RuntimeError(update["error"])
+        operation["status"] = "success"
+    except Exception as error:  # noqa: BLE001
+        operation["status"] = "error"
+        operation["error"] = str(error)
+        log.exception("Не удалось скачать модель %s: %s", operation["model"], error)
+
+
+def _job_config(job: dict) -> dict:
+    process_cfg = deepcopy(cfg)
+    _apply_model_settings(process_cfg, job.get("models", MODEL_SETTINGS))
+    return process_cfg
+
+
+def _missing_model_roles(settings: dict) -> list[str]:
+    ollama_ok, present = _ollama_tags(cfg["llm"].get("ollama_url", ""))
+    missing = []
+    if _asr_status(settings["asr_model"]) != "ok":
+        missing.append("ASR")
+    if not ollama_ok or not _model_present(settings["vlm_model"], present):
+        missing.append("VLM")
+    if not ollama_ok or not _model_present(settings["llm_model"], present):
+        missing.append("LLM")
+    return missing
+
+
 def _job_logger(job_id: str) -> logging.Logger:
     job = JOBS[job_id]
 
@@ -188,17 +332,10 @@ def worker() -> None:
         job["status"] = "running"
         job["started"] = _now()
         try:
-            if job.get("kind") == "mts_download":
-                job["stage"] = "Скачивание записи экрана со звуком..."
-                from mts_link import download_recording
-                job["out"] = str(download_recording(job["source_url"], jlog))
-                job["stage"] = "MP4 со звуком скачан"
-            else:
-                job["stage"] = "Загрузка моделей..."
-                job["out"] = str(process_video(Path(job["path"]), cfg, jlog))
+            job["stage"] = "Загрузка моделей..."
+            job["out"] = str(process_video(Path(job["path"]), _job_config(job), jlog))
             job["status"] = "done"
-            if job.get("kind") != "mts_download":
-                job["stage"] = "Готово"
+            job["stage"] = "Готово"
         except Exception as e:  # noqa: BLE001
             job["status"] = "error"
             job["error"] = str(e)
@@ -240,6 +377,58 @@ def health() -> dict:
     }
 
 
+@app.get("/api/models")
+def models() -> dict:
+    """Каталог, выбранные модели и состояние их загрузки."""
+    ollama_ok, local_models = _ollama_models(cfg["llm"].get("ollama_url", ""))
+    present = {model.get("name", "") for model in local_models}
+    with MODEL_LOCK:
+        pulls = list(MODEL_PULLS.values())
+    return {
+        "catalog": MODEL_CATALOG,
+        "settings": MODEL_SETTINGS,
+        "ollama_available": ollama_ok,
+        "ollama_models": local_models,
+        "installed": {
+            "asr": {name: _asr_status(name) for name in _catalog_names("asr")},
+            "vlm": {name: _model_present(name, present) for name in _catalog_names("vlm")},
+            "llm": {name: _model_present(name, present) for name in _catalog_names("llm")},
+        },
+        "pulls": pulls,
+    }
+
+
+@app.post("/api/models/pull")
+def pull_model(payload: dict) -> dict:
+    role = str(payload.get("role", ""))
+    model = str(payload.get("model", ""))
+    if role not in MODEL_CATALOG or model not in _catalog_names(role):
+        raise HTTPException(400, "Неизвестная модель или её роль")
+    return _start_model_pull(role, model)
+
+
+@app.put("/api/settings/models")
+def save_models(payload: dict) -> dict:
+    global MODEL_SETTINGS
+    settings = {
+        "asr_model": str(payload.get("asr_model", "")),
+        "vlm_model": str(payload.get("vlm_model", "")),
+        "llm_model": str(payload.get("llm_model", "")),
+    }
+    for key, role in (("asr_model", "asr"), ("vlm_model", "vlm"), ("llm_model", "llm")):
+        if settings[key] not in _catalog_names(role):
+            raise HTTPException(400, f"Недопустимая модель для {role}")
+
+    missing = _missing_model_roles(settings)
+    if missing:
+        raise HTTPException(409, f"Сначала скачайте модели: {', '.join(missing)}")
+
+    MODEL_SETTINGS = settings
+    _apply_model_settings(cfg, MODEL_SETTINGS)
+    _save_model_settings(MODEL_SETTINGS)
+    return {"settings": MODEL_SETTINGS}
+
+
 @app.post("/api/upload")
 async def upload(file: UploadFile = File(...)) -> dict:
     name = file.filename or "video.mp4"
@@ -277,37 +466,6 @@ async def upload(file: UploadFile = File(...)) -> dict:
     return JOBS[job_id]
 
 
-@app.post("/api/mts-link")
-def add_mts_link(payload: dict) -> dict:
-    """Ставит в очередь загрузку screen-share MP4 из публичной ссылки МТС Линк."""
-    url = str(payload.get("url", ""))
-    try:
-        from mts_link import parse_share_url
-        record_id, _ = parse_share_url(url)
-    except ValueError as e:
-        raise HTTPException(400, str(e)) from e
-
-    job_id = uuid.uuid4().hex[:8]
-    with LOCK:
-        JOBS[job_id] = {
-            "id": job_id,
-            "name": f"МТС Линк: запись экрана со звуком #{record_id}",
-            "kind": "mts_download",
-            "source_url": url,
-            "status": "queued",
-            "stage": "В очереди",
-            "created": _now(),
-            "started": None,
-            "finished": None,
-            "out": None,
-            "error": None,
-        }
-        Q.put(job_id)
-        _save_jobs()
-    log.info("МТС Линк #%s поставлена в очередь: job %s", record_id, job_id)
-    return {k: v for k, v in JOBS[job_id].items() if k != "source_url"}
-
-
 @app.post("/api/jobs/{job_id}/start")
 def start_job(job_id: str) -> dict:
     """Ставим ранее загруженное видео в очередь только по явному действию пользователя."""
@@ -317,6 +475,10 @@ def start_job(job_id: str) -> dict:
             raise HTTPException(404, f"Нет такой задачи: {job_id}")
         if job["status"] != "uploaded":
             raise HTTPException(409, f"Задачу нельзя запустить: {job.get('stage')}")
+        missing = _missing_model_roles(MODEL_SETTINGS)
+        if missing:
+            raise HTTPException(409, f"Скачайте выбранные модели: {', '.join(missing)}")
+        job["models"] = deepcopy(MODEL_SETTINGS)
         job["status"] = "queued"
         job["stage"] = "В очереди"
         Q.put(job_id)
@@ -327,15 +489,17 @@ def start_job(job_id: str) -> dict:
 
 @app.delete("/api/jobs/{job_id}")
 def delete_job(job_id: str) -> dict:
-    """Удаляет завершённую или ошибочную заявку и её лог, сохраняя результат на диске."""
+    """Удаляет подготовленную, завершённую или ошибочную заявку."""
     with LOCK:
         job = JOBS.get(job_id)
         if not job:
             raise HTTPException(404, f"Нет такой задачи: {job_id}")
-        if job["status"] not in {"done", "error"}:
-            raise HTTPException(409, "Можно удалить только завершённую или ошибочную задачу")
+        if job["status"] not in {"uploaded", "done", "error"}:
+            raise HTTPException(409, "Нельзя удалить задачу во время обработки")
         del JOBS[job_id]
         _save_jobs()
+    if job["status"] == "uploaded":
+        Path(job["path"]).unlink(missing_ok=True)
     (ROOT / "runtime" / "logs" / f"job_{job_id}.log").unlink(missing_ok=True)
     return {"ok": True}
 
@@ -373,8 +537,6 @@ def job_download(job_id: str) -> FileResponse:
             410,
             "Файл результата не найден на диске (удалён или переименован). Запустите задачу заново.",
         )
-    if job.get("kind") == "mts_download":
-        return FileResponse(dest, media_type="video/mp4", filename=dest.name)
     return FileResponse(dest, media_type="text/markdown", filename="конспект.md")
 
 

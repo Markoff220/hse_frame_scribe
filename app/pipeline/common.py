@@ -25,12 +25,16 @@ def load_config() -> dict:
     # Переопределения через переменные окружения (Docker)
     if os.environ.get("OLLAMA_URL"):
         cfg.setdefault("llm", {})["ollama_url"] = os.environ["OLLAMA_URL"]
-    if os.environ.get("VLM_MODEL"):
-        cfg.setdefault("llm", {})["vlm_model"] = os.environ["VLM_MODEL"]
-    if os.environ.get("LLM_MODEL"):
-        cfg.setdefault("llm", {})["llm_model"] = os.environ["LLM_MODEL"]
     if os.environ.get("ASR_DEVICE"):
         cfg.setdefault("asr", {})["device"] = os.environ["ASR_DEVICE"]
+    settings_file = ROOT / "runtime" / "tmp" / "model_settings.json"
+    try:
+        settings = json.loads(settings_file.read_text(encoding="utf-8"))
+        cfg.setdefault("asr", {})["model"] = settings.get("asr_model", cfg["asr"].get("model"))
+        cfg.setdefault("llm", {})["vlm_model"] = settings.get("vlm_model", cfg["llm"].get("vlm_model"))
+        cfg.setdefault("llm", {})["llm_model"] = settings.get("llm_model", cfg["llm"].get("llm_model"))
+    except (OSError, json.JSONDecodeError):
+        pass
     return cfg
 
 

@@ -1,8 +1,8 @@
 # VideoNotes: самодостаточный стек, GPU-профиль (RTX 2080 Ti).
-# `docker compose up -d --build` поднимает всё и само:
+# `docker compose up -d --build` поднимает сервисы без скачивания моделей:
 #   ollama      — LLM/VLM-сервер с GPU (внутри стека, хостовый Ollama не нужен)
-#   ollama-init — разовая загрузка моделей VLM/LLM (idempotent, переживает пересборки)
-#   pipeline    — web-сервис (ffmpeg + GigaAM на CUDA + кадры + конспект); GigaAM-веса качает сам в volume
+#   pipeline    — web-сервис (ffmpeg + GigaAM на CUDA + кадры + конспект)
+# Модели выбираются и скачиваются в разделе «Настройки моделей» веб-интерфейса.
 #
 # Требуется NVIDIA Container Toolkit на хосте (pacman: nvidia-container-toolkit).
 # CPU-профиль: закомментируйте блоки `deploy:` ниже и см. комментарии в .env.
@@ -23,18 +23,6 @@ services:
               capabilities: [gpu]
     restart: unless-stopped
 
-  ollama-init:
-    image: ollama/ollama:latest
-    container_name: videonotes-ollama-init
-    depends_on:
-      - ollama
-    environment:
-      OLLAMA_HOST: http://ollama:11434
-    entrypoint: ["sh", "-c"]
-    command:
-      - "set -e; echo '[init] Ожидание Ollama...'; for i in $$(seq 1 90); do ollama list >/dev/null 2>&1 && break; sleep 2; done; echo \"[init] Загрузка ${VLM_MODEL}...\"; ollama pull ${VLM_MODEL}; echo \"[init] Загрузка ${LLM_MODEL}...\"; ollama pull ${LLM_MODEL}; echo '[init] Модели готовы'"
-    restart: "no"
-
   pipeline:
     build:
       context: .
@@ -49,8 +37,6 @@ services:
     environment:
       VIDEONOTES_CONFIG: /app/config/docker.json
       OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
-      VLM_MODEL: ${VLM_MODEL:-qwen2.5vl:3b}
-      LLM_MODEL: ${LLM_MODEL:-qwen2.5:3b}
       ASR_DEVICE: ${ASR_DEVICE:-auto}
       # Результаты всегда лежат рядом с проектом в ./output.
       OUTPUT_HOST_DIR: ./output
@@ -67,8 +53,6 @@ services:
     depends_on:
       ollama:
         condition: service_started
-      ollama-init:
-        condition: service_completed_successfully
     volumes:
       - ./config/docker.json:/app/config/docker.json:ro
       - gigaam-models:/app/runtime/models/gigaam

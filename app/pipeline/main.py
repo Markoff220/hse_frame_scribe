@@ -2,7 +2,6 @@
 
 Команды:
   python app/pipeline/main.py process <video>   — обработать одно видео
-  python app/pipeline/main.py download-mts <url> — скачать MP4 записи экрана со звуком из МТС Линк
   python app/pipeline/main.py watch             — следить за папкой runtime/in/
   python app/pipeline/main.py selftest          — проверка установки (модели, ffmpeg, Ollama)
 """
@@ -230,13 +229,6 @@ def main() -> int:
             log.error("Нужен путь к видео: process <video>")
             return 1
         process_video(Path(args[1]), cfg, log)
-        return 0
-    if cmd == "download-mts":
-        if len(args) < 2:
-            log.error("Нужна публичная ссылка МТС Линк: download-mts <url>")
-            return 1
-        from mts_link import download_recording
-        log.info("MP4 сохранён: %s", download_recording(args[1], log))
         return 0
     if cmd == "watch":
         watch(cfg, log)

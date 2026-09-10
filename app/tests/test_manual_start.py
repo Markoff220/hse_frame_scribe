@@ -11,7 +11,7 @@ def test_uploaded_job_waits_until_manual_start(tmp_path, monkeypatch):
     video.write_bytes(b"test")
     monkeypatch.setattr(web, "Q", __import__("queue").Queue())
     monkeypatch.setattr(web, "JOBS_FILE", tmp_path / "jobs.json")
-    web.JOBS[job_id] = {
+    monkeypatch.setattr(web, "JOBS", {job_id: {
         "id": job_id,
         "name": "lesson.mp4",
         "path": str(video),
@@ -22,26 +22,45 @@ def test_uploaded_job_waits_until_manual_start(tmp_path, monkeypatch):
         "finished": None,
         "out": None,
         "error": None,
-    }
+    }})
+    monkeypatch.setattr(web, "MODEL_SETTINGS", {
+        "asr_model": "v3_e2e_rnnt",
+        "vlm_model": "qwen2.5vl:3b",
+        "llm_model": "qwen2.5:3b",
+    })
+    monkeypatch.setattr(web, "_missing_model_roles", lambda settings: [])
 
     client = TestClient(web.app)
     response = client.post(f"/api/jobs/{job_id}/start")
 
     assert response.status_code == 200
     assert response.json()["status"] == "queued"
+    assert response.json()["models"] == web.MODEL_SETTINGS
     assert web.Q.get_nowait() == job_id
 
 
-def test_mts_link_job_is_queued_without_exposing_source_url(tmp_path, monkeypatch):
-    monkeypatch.setattr(web, "Q", __import__("queue").Queue())
+def test_uploaded_job_can_be_deleted_with_source_file(tmp_path, monkeypatch):
+    job_id = "delete01"
+    video = tmp_path / "lesson.mp4"
+    video.write_bytes(b"test")
     monkeypatch.setattr(web, "JOBS_FILE", tmp_path / "jobs.json")
-    monkeypatch.setattr(web, "JOBS", {})
+    monkeypatch.setattr(web, "JOBS", {
+        job_id: {
+            "id": job_id,
+            "name": "lesson.mp4",
+            "path": str(video),
+            "status": "uploaded",
+            "stage": "Готово к запуску",
+            "created": "2026-09-01 18:00:00",
+            "started": None,
+            "finished": None,
+            "out": None,
+            "error": None,
+        }
+    })
 
-    response = TestClient(web.app).post(
-        "/api/mts-link",
-        json={"url": "https://my.mts-link.ru/j/1/2/record-new/123456/token-value"},
-    )
+    response = TestClient(web.app).delete(f"/api/jobs/{job_id}")
 
     assert response.status_code == 200
-    assert response.json()["kind"] == "mts_download"
-    assert "source_url" not in response.json()
+    assert job_id not in web.JOBS
+    assert not video.exists()
