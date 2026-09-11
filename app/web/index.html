@@ -24,7 +24,8 @@
   .drop { border:2px dashed var(--line); border-radius:14px; background:var(--card); padding:44px 20px; text-align:center; cursor:pointer; transition:.15s; }
   .drop:hover,.drop.over { border-color:var(--accent); background:var(--card2); }
   .drop .big { font-size:17px; font-weight:600; }
-  .drop .hint,.uploading,.empty { color:var(--muted); font-size:13px; margin-top:6px; }
+   .drop .hint,.uploading,.empty { color:var(--muted); font-size:13px; margin-top:6px; }
+   .modes { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-bottom:14px; }.mode { position:relative; display:block; cursor:pointer; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:13px 14px; }.mode:has(input:checked) { border-color:var(--accent); background:#152039; }.mode input { position:absolute; opacity:0; }.mode strong { display:block; font-size:14px; }.mode span { display:block; color:var(--muted); font-size:12px; margin-top:3px; }
    .drop input { display:none; }
    .uploading { min-height:22px; margin-top:10px; }
   h2 { font-size:15px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin:28px 0 12px; }
@@ -37,6 +38,7 @@
    .model h3 { margin:0 0 4px; font-size:15px; }.model p,.model .model-status { color:var(--muted); font-size:13px; margin:0 0 12px; }
    .model-row { display:flex; gap:8px; align-items:center; }.model select { flex:1; min-width:0; background:#0b0d11; border:1px solid var(--line); border-radius:8px; color:var(--text); padding:8px 10px; font:inherit; }
    .model .model-status.ok { color:var(--ok); }.model .model-status.err { color:var(--err); }.settings-actions { display:flex; gap:8px; align-items:center; margin-top:18px; }.settings-message { color:var(--muted); font-size:13px; }
+   @media (max-width:600px) { .modes { grid-template-columns:1fr; }.job { align-items:flex-start; flex-wrap:wrap; }.acts { width:100%; flex-wrap:wrap; }.dir { max-width:100%; } }
   pre.log { background:#0b0d11; border:1px solid var(--line); border-radius:10px; padding:14px; font-size:12px; overflow-x:auto; white-space:pre-wrap; max-height:420px; overflow-y:auto; margin:0; }
   .footer { color:var(--muted); font-size:12px; margin-top:40px; border-top:1px solid var(--line); padding-top:14px; }
 </style>
@@ -52,12 +54,16 @@
   </div>
 
   <nav class="tabs" aria-label="Разделы">
-    <button class="tab active" data-tab="transcribe">Транскрибация</button>
+    <button class="tab active" data-tab="processor">Обработчик</button>
     <button class="tab" data-tab="records">Мои записи</button>
     <button class="tab" data-tab="settings">Настройки моделей</button>
   </nav>
 
-  <section class="panel" id="panel-transcribe">
+  <section class="panel" id="panel-processor">
+    <div class="modes" role="radiogroup" aria-label="Режим обработки">
+      <label class="mode"><input type="radio" name="mode" value="full" checked><strong>Полная обработка</strong><span>Транскрипция, кадры, анализ изображений и нейроконспект.</span></label>
+      <label class="mode"><input type="radio" name="mode" value="audio"><strong>Транскрибация</strong><span>Только извлечение WAV-аудиодорожки, без моделей.</span></label>
+    </div>
     <div class="drop" id="drop">
       <div class="big">Перетащи видео сюда</div>
       <div class="hint">или кликни, чтобы выбрать файл (mp4, mkv, mov, avi, webm…)</div>
@@ -69,8 +75,8 @@
   </section>
 
   <section class="panel hidden" id="panel-records">
-    <h2>Готовые записи</h2>
-    <div id="records-jobs"><div class="empty">Готовых записей пока нет.</div></div>
+    <h2>Готовые материалы</h2>
+    <div id="records-jobs"><div class="empty">Готовых материалов пока нет.</div></div>
   </section>
 
   <section class="panel hidden" id="panel-settings">
@@ -85,7 +91,7 @@
 </div>
 <script>
 const $ = id => document.getElementById(id);
-const drop = $('drop'), file = $('file'), upstat = $('upstat'), transcribeJobs = $('transcribe-jobs'), recordsJobs = $('records-jobs'), modelSettings = $('model-settings'), modelMessage = $('model-message');
+const drop = $('drop'), file = $('file'), upstat = $('upstat'), processorJobs = $('transcribe-jobs'), recordsJobs = $('records-jobs'), modelSettings = $('model-settings'), modelMessage = $('model-message');
 let activeJobId = null;
 let modelsData = null;
 const BADGE = { uploaded:['Готово к запуску','b-uploaded'], queued:['В очереди','b-queued'], running:['Обработка','b-running'], done:['Готово','b-done'], error:['Ошибка','b-error'] };
@@ -129,7 +135,7 @@ file.addEventListener('change', () => { if (file.files.length) upload(file.files
 
 async function upload(f) {
   upstat.textContent = `Загрузка ${f.name} (${(f.size / 1048576).toFixed(1)} МБ)…`;
-  const fd = new FormData(); fd.append('file', f);
+  const fd = new FormData(); fd.append('file', f); fd.append('mode', document.querySelector('input[name="mode"]:checked').value);
   try {
     const r = await fetch('/api/upload', {method:'POST', body:fd}); const j = await r.json();
     if (!r.ok) throw new Error(j.detail || r.statusText);
@@ -196,9 +202,10 @@ $('save-models').onclick = async () => {
 function jobCard(j, records) {
   const [label, cls] = BADGE[j.status] || [j.status, 'b-queued'];
   const el = document.createElement('div'); el.className = 'job';
-  const meta = j.status === 'error' ? (j.error || 'ошибка') : j.status === 'done' ? `готово в ${j.finished}` : (j.stage || '…');
+  const mode = j.mode === 'audio' ? 'аудиодорожка WAV' : 'полная обработка';
+  const meta = `${mode} · ${j.status === 'error' ? (j.error || 'ошибка') : j.status === 'done' ? `готово в ${j.finished}` : (j.stage || '…')}`;
   const dir = j.status === 'done' ? resultDir(j) : '';
-  el.innerHTML = `<div class="info"><div class="name"></div><div class="meta">${new Date(j.created).toLocaleString('ru')} · ${meta}</div></div><span class="badge ${cls}">${label}</span><div class="acts"><button data-log>Лог</button>${j.status === 'uploaded' && !records ? '<button class="primary" data-start>▶ Запустить</button>' : ''}${j.status === 'done' ? `<button class="dir" data-dir title="Папка с конспектом — кликни, чтобы скопировать путь"></button>` : ''}${(j.status === 'uploaded' || records) ? '<button class="delete" data-delete title="Удалить заявку" aria-label="Удалить заявку">×</button>' : ''}</div>`;
+  el.innerHTML = `<div class="info"><div class="name"></div><div class="meta">${new Date(j.created).toLocaleString('ru')} · ${meta}</div></div><span class="badge ${cls}">${label}</span><div class="acts"><button data-log>Лог</button>${j.status === 'uploaded' && !records ? '<button class="primary" data-start>▶ Запустить</button>' : ''}${j.status === 'done' && j.mode === 'audio' ? `<a class="btn primary" href="/api/jobs/${j.id}/download">Скачать WAV</a>` : ''}${j.status === 'done' ? `<button class="dir" data-dir title="Папка с результатом — кликни, чтобы скопировать путь"></button>` : ''}${(j.status === 'uploaded' || records) ? '<button class="delete" data-delete title="Удалить заявку" aria-label="Удалить заявку">×</button>' : ''}</div>`;
   el.querySelector('.name').textContent = j.name;
   el.querySelector('[data-log]').onclick = () => showLog(j.id);
   const start = el.querySelector('[data-start]'); if (start) start.onclick = () => startJob(j.id);
@@ -244,8 +251,8 @@ async function refresh() {
     healthData = health;
     renderStatus(health);
     $('footer').textContent = `Очередь: ${health.queued} · Ollama: ${health.ollama_url || '—'}`;
-    render(transcribeJobs, jobs.filter(j => j.status !== 'done'), 'Загрузи видео, затем нажми «Запустить».');
-    render(recordsJobs, jobs.filter(j => j.status === 'done'), 'Готовых записей пока нет.', true);
+    render(processorJobs, jobs.filter(j => j.status !== 'done'), 'Загрузи видео, затем нажми «Запустить».');
+    render(recordsJobs, jobs.filter(j => j.status === 'done'), 'Готовых материалов пока нет.', true);
     const anyActive = jobs.some(j => j.status === 'running' || j.status === 'queued');
     if (activeJobId) { const j = jobs.find(x => x.id === activeJobId); if (j?.status === 'running') showLog(activeJobId); else if (j?.status === 'done') activeJobId = null; }
     if (anyActive) setTimeout(refresh, 3000);

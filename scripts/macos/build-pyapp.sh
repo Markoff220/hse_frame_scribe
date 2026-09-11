@@ -51,7 +51,7 @@ cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
   <key>CFBundleIdentifier</key><string>org.videonotes.app</string>
   <key>CFBundleName</key><string>VideoNotes</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1.1</string>
+  <key>CFBundleShortVersionString</key><string>0.1.2</string>
   <key>LSMinimumSystemVersion</key><string>12.0</string>
 </dict></plist>
 PLIST

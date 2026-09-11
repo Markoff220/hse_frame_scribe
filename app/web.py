@@ -27,14 +27,14 @@ from datetime import datetime
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
 
 BASE = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE / "pipeline"))
 
 from common import ROOT, VIDEO_EXTS, load_config, sanitize, setup_logging  # noqa: E402
-from main import process_video  # noqa: E402
+from main import extract_audio_track, process_video  # noqa: E402
 
 app = FastAPI(title="VideoNotes")
 cfg = load_config()
@@ -212,13 +212,14 @@ def _load_jobs() -> None:
                 j["status"] = "error"
                 j["error"] = "Прервана перезапуском сервиса"
                 j["stage"] = "Прервана перезапуском сервиса"
+            j.setdefault("mode", "full")
             JOBS[jid] = j
     except Exception:  # noqa: BLE001
         pass
 
 
 _load_jobs()
-STAGE_RE = re.compile(r"\[(\d)/5\]")
+STAGE_RE = re.compile(r"\[(\d+)/(\d+)\]")
 
 
 def _now() -> str:
@@ -332,8 +333,12 @@ def worker() -> None:
         job["status"] = "running"
         job["started"] = _now()
         try:
-            job["stage"] = "Загрузка моделей..."
-            job["out"] = str(process_video(Path(job["path"]), _job_config(job), jlog))
+            if job.get("mode", "full") == "audio":
+                job["stage"] = "Извлечение аудиодорожки..."
+                job["out"] = str(extract_audio_track(Path(job["path"]), _job_config(job), jlog))
+            else:
+                job["stage"] = "Загрузка моделей..."
+                job["out"] = str(process_video(Path(job["path"]), _job_config(job), jlog))
             job["status"] = "done"
             job["stage"] = "Готово"
         except Exception as e:  # noqa: BLE001
@@ -430,10 +435,12 @@ def save_models(payload: dict) -> dict:
 
 
 @app.post("/api/upload")
-async def upload(file: UploadFile = File(...)) -> dict:
+async def upload(file: UploadFile = File(...), mode: str = Form("full")) -> dict:
     name = file.filename or "video.mp4"
     if Path(name).suffix.lower() not in VIDEO_EXTS:
         raise HTTPException(400, f"Не видео: {name} (допустимо: {', '.join(sorted(VIDEO_EXTS))})")
+    if mode not in {"full", "audio"}:
+        raise HTTPException(400, "Неизвестный режим обработки")
     job_id = uuid.uuid4().hex[:8]
     base = sanitize(name)
     stem, ext = Path(base).stem, Path(base).suffix
@@ -453,6 +460,7 @@ async def upload(file: UploadFile = File(...)) -> dict:
             "id": job_id,
             "name": name,
             "path": str(dest),
+            "mode": mode,
             "status": "uploaded",
             "stage": "Готово к запуску",
             "created": _now(),
@@ -462,7 +470,7 @@ async def upload(file: UploadFile = File(...)) -> dict:
             "error": None,
         }
     _save_jobs()
-    log.info("Загружено %s (%.1f МБ) -> job %s; ожидает ручного запуска", name, dest.stat().st_size / 1e6, job_id)
+    log.info("Загружено %s (%.1f МБ, режим %s) -> job %s; ожидает ручного запуска", name, dest.stat().st_size / 1e6, mode, job_id)
     return JOBS[job_id]
 
 
@@ -475,10 +483,11 @@ def start_job(job_id: str) -> dict:
             raise HTTPException(404, f"Нет такой задачи: {job_id}")
         if job["status"] != "uploaded":
             raise HTTPException(409, f"Задачу нельзя запустить: {job.get('stage')}")
-        missing = _missing_model_roles(MODEL_SETTINGS)
-        if missing:
-            raise HTTPException(409, f"Скачайте выбранные модели: {', '.join(missing)}")
-        job["models"] = deepcopy(MODEL_SETTINGS)
+        if job.get("mode", "full") == "full":
+            missing = _missing_model_roles(MODEL_SETTINGS)
+            if missing:
+                raise HTTPException(409, f"Скачайте выбранные модели: {', '.join(missing)}")
+            job["models"] = deepcopy(MODEL_SETTINGS)
         job["status"] = "queued"
         job["stage"] = "В очереди"
         Q.put(job_id)
@@ -530,13 +539,15 @@ def job_download(job_id: str) -> FileResponse:
         raise HTTPException(404, f"Нет такой задачи: {job_id}")
     if job["status"] != "done" or not job.get("out"):
         detail = job.get("error") or job.get("stage") or "в процессе"
-        raise HTTPException(409, f"Конспект ещё не готов: {detail}")
+        raise HTTPException(409, f"Результат ещё не готов: {detail}")
     dest = Path(job["out"])
     if not dest.is_file():
         raise HTTPException(
             410,
             "Файл результата не найден на диске (удалён или переименован). Запустите задачу заново.",
         )
+    if job.get("mode", "full") == "audio":
+        return FileResponse(dest, media_type="audio/wav", filename="audio.wav")
     return FileResponse(dest, media_type="text/markdown", filename="конспект.md")
 
 

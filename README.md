@@ -15,6 +15,8 @@ VideoNotes превращает видео в Markdown-конспект для O
 | Анализ экрана | Ollama VLM | Описание и важность кадра |
 | Конспект | Ollama LLM | Map-reduce выжимка транскрипта и кадров |
 
+В разделе «Обработчик» доступны два режима: «Полная обработка» выполняет все этапы из таблицы, а «Транскрибация» извлекает только моно-WAV 16 кГц без загрузки и вызова ML-моделей.
+
 ## Системные требования
 
 ### Рекомендуемый профиль GPU
@@ -34,7 +36,7 @@ VideoNotes превращает видео в Markdown-конспект для O
 
 ### Запуск без Docker
 
-- Python 3.10 или новее.
+- Python 3.13 или новее.
 - `ffmpeg` в `PATH`.
 - Ollama для анализа кадров и составления конспекта.
 - Для Windows предусмотрены `.bat`-скрипты.
@@ -92,6 +94,12 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python app/pipeline/main.py selftest
 .venv/bin/python app/pipeline/main.py process /путь/к/видео.mp4
+```
+
+Только извлечение WAV-аудиодорожки:
+
+```bash
+.venv/bin/python app/pipeline/main.py extract-audio /путь/к/видео.mp4
 ```
 
 Для запуска web-интерфейса без Docker:

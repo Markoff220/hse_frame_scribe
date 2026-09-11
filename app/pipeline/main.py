@@ -116,6 +116,29 @@ def process_video(video: Path, cfg: dict, log) -> Path:
     return concept
 
 
+def extract_audio_track(video: Path, cfg: dict, log) -> Path:
+    """Видео -> WAV без обращения к ASR, VLM или LLM."""
+    video = video.resolve()
+    if not is_video(video):
+        raise ValueError(f"Не видео: {video}")
+    import audio as A
+    duration = A.ffprobe_duration(video)
+    out_root = Path(cfg["output"]["dir"])
+    if not out_root.is_absolute():
+        out_root = (ROOT / out_root).resolve()
+    out_dir = out_root / sanitize(video.stem)
+    n = 2
+    while out_dir.exists():
+        out_dir = out_root / f"{sanitize(video.stem)}_{n}"
+        n += 1
+    out_dir.mkdir(parents=True)
+    audio_path = out_dir / "audio.wav"
+    log.info("[1/1] Извлечение аудиодорожки (%s)...", fmt_ts(duration))
+    A.extract_audio(video, audio_path)
+    log.info("Аудиодорожка сохранена: %s", audio_path)
+    return audio_path
+
+
 def watch(cfg: dict, log) -> None:
     in_dir = ROOT / "runtime" / "in"
     in_dir.mkdir(exist_ok=True)
@@ -229,6 +252,12 @@ def main() -> int:
             log.error("Нужен путь к видео: process <video>")
             return 1
         process_video(Path(args[1]), cfg, log)
+        return 0
+    if cmd == "extract-audio":
+        if len(args) < 2:
+            log.error("Нужен путь к видео: extract-audio <video>")
+            return 1
+        extract_audio_track(Path(args[1]), cfg, log)
         return 0
     if cmd == "watch":
         watch(cfg, log)

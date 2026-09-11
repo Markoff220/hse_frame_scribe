@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "videonotes"
-version = "0.1.1"
+version = "0.1.2"
 description = "Локальное приложение для создания конспектов из видео"
 requires-python = ">=3.13"
 dependencies = [

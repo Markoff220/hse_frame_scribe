@@ -3,7 +3,7 @@
 Видео обрабатывается цепочкой `ffmpeg -> Silero VAD -> GigaAM -> кадры/VLM -> map-reduce LLM`; готовые материалы сохраняются в `output/<имя-видео>/`.
 
 ## Точки входа
-- CLI: `python app/pipeline/main.py process <video>`, `watch` и `selftest`. Логи CLI: `runtime/logs/run_*.log`.
+- CLI: `python app/pipeline/main.py process <video>`, `extract-audio <video>`, `watch` и `selftest`. Логи CLI: `runtime/logs/run_*.log`.
 - Web: `python app/web.py [port]` (8090 по умолчанию). Загрузка создаёт задачу `uploaded`; для видео необходим отдельный `POST /api/jobs/{id}/start`. Очередь обслуживает один поток.
 - `app/pipeline/main.py` связывает все стадии; `app/web.py` вызывает его `process_video()`. UI находится в `app/web/index.html`.
 
