@@ -42,18 +42,18 @@ log = setup_logging(ROOT / "runtime" / "logs" / f"web_{datetime.now():%Y%m%d}.lo
 
 MODEL_CATALOG = {
     "asr": [
-        {"name": "v3_e2e_rnnt", "label": "GigaAM v3 E2E RNN-T", "size": "~1 ГБ", "note": "Рекомендуется: пунктуация и нормализация текста."},
-        {"name": "v3_e2e_ctc", "label": "GigaAM v3 E2E CTC", "size": "~1 ГБ", "note": "Альтернативная end-to-end модель."},
-        {"name": "v3_ctc", "label": "GigaAM v3 CTC", "size": "~1 ГБ", "note": "Базовая CTC-модель распознавания."},
+        {"name": "v3_e2e_rnnt", "label": "GigaAM v3 E2E RNN-T", "size": "449,2 МБ", "note": "Рекомендуется: пунктуация и нормализация текста."},
+        {"name": "v3_e2e_ctc", "label": "GigaAM v3 E2E CTC", "size": "442,6 МБ", "note": "Альтернативная end-to-end модель."},
+        {"name": "v3_ctc", "label": "GigaAM v3 CTC", "size": "441,7 МБ", "note": "Базовая CTC-модель распознавания."},
     ],
     "vlm": [
-        {"name": "qwen2.5vl:3b", "label": "Qwen 2.5 VL 3B", "size": "~3 ГБ", "note": "Экономный анализ кадров."},
-        {"name": "qwen2.5vl:7b", "label": "Qwen 2.5 VL 7B", "size": "~6 ГБ", "note": "Более точный анализ кадров."},
+        {"name": "qwen2.5vl:3b", "label": "Qwen 2.5 VL 3B", "size": "3,2 ГБ", "note": "Экономный анализ кадров."},
+        {"name": "qwen2.5vl:7b", "label": "Qwen 2.5 VL 7B", "size": "6,0 ГБ", "note": "Более точный анализ кадров."},
     ],
     "llm": [
-        {"name": "qwen2.5:3b", "label": "Qwen 2.5 3B", "size": "~2 ГБ", "note": "Быстрый, экономный конспект."},
-        {"name": "qwen2.5:7b", "label": "Qwen 2.5 7B", "size": "~4.7 ГБ", "note": "Баланс качества и скорости."},
-        {"name": "qwen2.5:14b-instruct-q4_K_M", "label": "Qwen 2.5 14B Instruct Q4", "size": "~9 ГБ", "note": "Максимальное качество конспекта."},
+        {"name": "qwen2.5:3b", "label": "Qwen 2.5 3B", "size": "1,9 ГБ", "note": "Быстрый, экономный конспект."},
+        {"name": "qwen2.5:7b", "label": "Qwen 2.5 7B", "size": "4,7 ГБ", "note": "Баланс качества и скорости."},
+        {"name": "qwen2.5:14b-instruct-q4_K_M", "label": "Qwen 2.5 14B Instruct Q4", "size": "9,0 ГБ", "note": "Максимальное качество конспекта."},
     ],
 }
 SETTINGS_FILE = ROOT / "runtime" / "tmp" / "model_settings.json"

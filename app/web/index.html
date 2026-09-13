@@ -34,11 +34,13 @@
   .badge { font-size:11px; font-weight:700; padding:3px 9px; border-radius:20px; white-space:nowrap; }.b-uploaded,.b-queued { background:#2a2f3a; color:var(--muted); }.b-running { background:#1d2c4a; color:var(--accent); }.b-done { background:#17352a; color:var(--ok); }.b-error { background:#3a2226; color:var(--err); }
    .acts { display:flex; gap:8px; align-items:center; } button,.btn { background:var(--card2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:6px 12px; font-size:13px; cursor:pointer; text-decoration:none; display:inline-block; } button:hover,.btn:hover { border-color:var(--accent); }.primary { background:var(--accent); border-color:var(--accent); color:white; }.primary:hover { filter:brightness(1.1); }.delete { color:var(--err); padding:4px 9px; font-size:18px; line-height:1; }.delete:hover { border-color:var(--err); }
    .dir { max-width:380px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; color:var(--muted); }
-   .model { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:10px; }
-   .model h3 { margin:0 0 4px; font-size:15px; }.model p,.model .model-status { color:var(--muted); font-size:13px; margin:0 0 12px; }
-   .model-row { display:flex; gap:8px; align-items:center; }.model select { flex:1; min-width:0; background:#0b0d11; border:1px solid var(--line); border-radius:8px; color:var(--text); padding:8px 10px; font:inherit; }
-   .model .model-status.ok { color:var(--ok); }.model .model-status.err { color:var(--err); }.settings-actions { display:flex; gap:8px; align-items:center; margin-top:18px; }.settings-message { color:var(--muted); font-size:13px; }
-   @media (max-width:600px) { .modes { grid-template-columns:1fr; }.job { align-items:flex-start; flex-wrap:wrap; }.acts { width:100%; flex-wrap:wrap; }.dir { max-width:100%; } }
+    .model-settings { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+    .model { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:13px; min-width:0; }
+    .model h3 { margin:0 0 3px; font-size:14px; }.model p,.model .model-status { color:var(--muted); font-size:12px; margin:0; }
+    .model p { min-height:36px; }.model-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:7px; align-items:center; margin-top:10px; }.model select { min-width:0; background:#0b0d11; border:1px solid var(--line); border-radius:8px; color:var(--text); padding:7px 8px; font:12px inherit; }
+    .model-row button { padding:7px 9px; }.model .model-status { margin-top:7px; }.model .model-status.ok { color:var(--ok); }.model .model-status.err { color:var(--err); }.settings-actions { display:flex; gap:8px; align-items:center; margin-top:14px; }.settings-message { color:var(--muted); font-size:13px; }
+    @media (max-width:700px) { .model-settings { grid-template-columns:1fr; }.model p { min-height:0; } }
+    @media (max-width:600px) { .modes { grid-template-columns:1fr; }.job { align-items:flex-start; flex-wrap:wrap; }.acts { width:100%; flex-wrap:wrap; }.dir { max-width:100%; } }
   pre.log { background:#0b0d11; border:1px solid var(--line); border-radius:10px; padding:14px; font-size:12px; overflow-x:auto; white-space:pre-wrap; max-height:420px; overflow-y:auto; margin:0; }
   .footer { color:var(--muted); font-size:12px; margin-top:40px; border-top:1px solid var(--line); padding-top:14px; }
 </style>
@@ -82,7 +84,7 @@
   <section class="panel hidden" id="panel-settings">
     <h2>Модели обработки</h2>
     <p class="empty">Сначала скачай нужные модели. Применить можно только полностью скачанный набор.</p>
-    <div id="model-settings"><div class="empty">Загрузка списка моделей…</div></div>
+    <div class="model-settings" id="model-settings"><div class="empty">Загрузка списка моделей…</div></div>
     <div class="settings-actions"><button class="primary" id="save-models">Применить модели</button><span class="settings-message" id="model-message"></span></div>
   </section>
 

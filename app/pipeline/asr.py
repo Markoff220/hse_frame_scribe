@@ -1,6 +1,6 @@
 """ASR: GigaAM v3 e2e RNN-T (официальный пакет salute-developers/GigaAM).
 
-Веса скачиваются с публичного CDN Sber в runtime/models/gigaam (первый запуск ~1 ГБ).
+Веса скачиваются с публичного CDN Sber в runtime/models/gigaam (рекомендуемая модель: 449,2 МБ).
 Лимит transcribe() — 25 с, поэтому на вход идут VAD-чанки.
 """
 import gc
@@ -31,7 +31,7 @@ class GigaAMASR:
             from common import ROOT
             model_dir = ROOT / model_dir
         model_dir.mkdir(parents=True, exist_ok=True)
-        self.log.info("Загрузка GigaAM %s (первый запуск — скачивание ~1 ГБ)...",
+        self.log.info("Загрузка GigaAM %s (первый запуск — скачивание около 449 МБ)...",
                       self.cfg.get("model", "v3_e2e_rnnt"))
         kwargs = {}
         device = self.cfg.get("device", "auto")

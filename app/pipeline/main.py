@@ -177,7 +177,7 @@ def selftest(cfg: dict, log) -> int:
     else:
         log.error("✗ ffmpeg не найден в PATH"); ok = False
 
-    log.info("Проверка GigaAM (первый запуск скачает модель ~1 ГБ)...")
+    log.info("Проверка GigaAM (первый запуск скачает модель 449,2 МБ)...")
     try:
         from asr import GigaAMASR
         asr = GigaAMASR(cfg["asr"], log)

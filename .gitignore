@@ -29,8 +29,10 @@ runtime/tmp/*
 dist/
 build/
 *.egg-info/
+output/
 
 # Служебное
 .opencode/
+.playwright-mcp/
 .DS_Store
 Thumbs.db

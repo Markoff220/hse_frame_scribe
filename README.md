@@ -1,93 +1,115 @@
 # VideoNotes
 
-VideoNotes превращает видео в Markdown-конспект для Obsidian: извлекает звук, распознаёт речь, выбирает важные кадры и собирает итоговую выжимку через LLM.
+VideoNotes превращает видео в Markdown-конспект для Obsidian. Приложение извлекает звук, распознаёт речь, выбирает важные кадры и собирает выжимку с помощью локальных моделей.
 
-На выходе для каждого видео создаются `конспект.md`, полная `транскрипция.md` и папка `кадры/` с иллюстрациями экранных моментов.
+Для каждого видео создаются `конспект.md`, полная `транскрипция.md` и папка `кадры/`.
 
-## Как работает
+## Готовые приложения
 
-| Этап | Инструмент | Результат |
+В релизах доступны самостоятельные дистрибутивы для Linux, Windows и macOS. В них не входят Python, модели, FFmpeg и Ollama: Python и зависимости PyApp установит при первом запуске, а FFmpeg, Ollama и модели устанавливаются на компьютере пользователя.
+
+| ОС | Архив | Архитектура | Установка | Данные приложения |
+| --- | --- | --- | --- | --- |
+| Linux | `VideoNotes-linux-x86_64.tar.gz` | x86_64 | `./install.sh` | `${XDG_DATA_HOME:-~/.local/share}/VideoNotes` |
+| Windows | `VideoNotes-windows-x86_64.zip` | x86_64 | `install.ps1` | `%LOCALAPPDATA%\VideoNotes` |
+| macOS | `VideoNotes-macos-<arch>.zip` | arm64 или x86_64 | `./install.sh` | `~/Library/Application Support/VideoNotes` |
+
+Во всех вариантах результаты, настройки, загрузки, логи и веса GigaAM хранятся в каталоге данных приложения. Модели Ollama хранятся в каталоге, настроенном самой Ollama.
+
+### Перед установкой
+
+Установите системные зависимости для своей ОС:
+
+| ОС | FFmpeg | Ollama |
 | --- | --- | --- |
-| Извлечение аудио | ffmpeg | Моно-аудио 16 кГц |
-| Поиск речи | Silero VAD | Фрагменты речи до 22 секунд |
-| Распознавание | GigaAM v3 e2e RNN-T | Транскрипция с таймкодами |
-| Выбор кадров | ffmpeg | Смены сцен и кадры через заданный интервал |
-| Анализ экрана | Ollama VLM | Описание и важность кадра |
-| Конспект | Ollama LLM | Map-reduce выжимка транскрипта и кадров |
+| Linux | пакет `ffmpeg` из репозитория дистрибутива | [страница загрузки](https://ollama.com/download/linux) |
+| Windows | [страница загрузки](https://ffmpeg.org/download.html), добавьте `ffmpeg` в `PATH` | [страница загрузки](https://ollama.com/download/windows) |
+| macOS | `brew install ffmpeg` | [страница загрузки](https://ollama.com/download/mac) |
 
-В разделе «Обработчик» доступны два режима: «Полная обработка» выполняет все этапы из таблицы, а «Транскрибация» извлекает только моно-WAV 16 кГц без загрузки и вызова ML-моделей.
+При первом запуске откройте в приложении «Настройки моделей», выберите и скачайте ASR, VLM и LLM. Указаны точные размеры файлов в каталогах GigaAM и Ollama на момент релиза; фактическое место на диске может быть немного больше из-за служебных данных Ollama.
 
-## Системные требования
+| Роль | Модель | Размер загрузки |
+| --- | --- | --- |
+| Распознавание речи | `v3_e2e_rnnt` | 449,2 МБ |
+| Распознавание речи | `v3_e2e_ctc` | 442,6 МБ |
+| Распознавание речи | `v3_ctc` | 441,7 МБ |
+| Анализ кадров | `qwen2.5vl:3b` | 3,2 ГБ |
+| Анализ кадров | `qwen2.5vl:7b` | 6,0 ГБ |
+| Конспект | `qwen2.5:3b` | 1,9 ГБ |
+| Конспект | `qwen2.5:7b` | 4,7 ГБ |
+| Конспект | `qwen2.5:14b-instruct-q4_K_M` | 9,0 ГБ |
 
-### Рекомендуемый профиль GPU
+Для обработки без GPU подойдут `qwen2.5vl:3b` и `qwen2.5:3b`; для GPU с 11 ГБ VRAM или больше рекомендуются `qwen2.5vl:7b` и `qwen2.5:14b-instruct-q4_K_M`.
 
-- Docker Engine и Docker Compose v2.
-- NVIDIA GPU с 11 ГБ VRAM или больше. Проверено на RTX 2080 Ti 11 ГБ.
-- NVIDIA Container Toolkit на хосте.
-- 16 ГБ RAM и не менее 30 ГБ свободного места плюс размер исходных видео.
-- Модели занимают место в Docker volume: GigaAM около 1 ГБ, `qwen2.5vl:7b` и `qwen2.5:14b-instruct-q4_K_M` суммарно около 15 ГБ.
+### Linux x86_64
 
-### CPU-профиль
+```bash
+tar -xzf VideoNotes-linux-x86_64.tar.gz
+cd VideoNotes-linux-x86_64
+./install.sh
+videonotes
+```
 
-- Docker Engine и Docker Compose v2.
-- Не менее 8 ГБ RAM и 15 ГБ свободного места плюс видео.
-- Используются модели `qwen2.5vl:3b` и `qwen2.5:3b`.
-- Обработка заметно медленнее; GPU для GigaAM и Ollama не используется.
+Установщик поместит launcher в `~/.local/bin/videonotes` и добавит приложение в меню рабочего стола. Если команда `videonotes` не найдена, добавьте `~/.local/bin` в `PATH` или перезапустите сеанс.
 
-### Запуск без Docker
+### Windows x86_64
 
-- Python 3.13 или новее.
-- `ffmpeg` в `PATH`.
-- Ollama для анализа кадров и составления конспекта.
-- Для Windows предусмотрены `.bat`-скрипты.
+Распакуйте `VideoNotes-windows-x86_64.zip`, откройте PowerShell в распакованной папке и выполните:
 
-## Быстрый запуск Docker
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\install.ps1
+```
 
-1. Скопируйте шаблон окружения:
+Приложение появится в меню «Пуск». Launcher устанавливается в `%LOCALAPPDATA%\VideoNotes\bin\videonotes.exe`.
 
-   ```bash
-   cp .env.example .env
-   ```
+### macOS
 
-   Результаты всегда сохраняются в `./output` рядом с проектом.
+Скачайте архив, соответствующий архитектуре Mac: `arm64` для Apple Silicon или `x86_64` для Intel. Затем выполните:
 
-2. Для GPU-профиля установите NVIDIA Container Toolkit, затем в `.env` включите:
+```bash
+cd VideoNotes-macos-<arch>
+./install.sh
+```
 
-   ```dotenv
-   ASR_DEVICE=cuda
-   ```
+Установщик скопирует `VideoNotes.app` в `/Applications` и запустит его. Архивы, собранные без Apple Developer ID, macOS может заблокировать при первом открытии. В таком случае подтвердите запуск в «Системные настройки → Конфиденциальность и безопасность».
 
-3. Запустите стек:
+## Использование
 
-   ```bash
-   docker compose up -d --build
-   ```
+1. Откройте VideoNotes.
+2. В «Настройки моделей» скачайте и примените нужные модели.
+3. Загрузите видео.
+4. Нажмите «Запустить» у созданной задачи.
+5. Скачайте готовый конспект после завершения обработки.
 
-4. Откройте `http://localhost:8090`, перейдите в «Настройки моделей», скачайте и примените ASR, VLM и LLM. Затем загрузите видео и нажмите «Запустить».
+Задачи обрабатываются по одной. Результаты находятся в каталоге данных приложения, в `output/<имя-видео>/`.
 
-Ollama поднимается внутри стека, но модели не скачиваются при сборке или запуске Compose. Веса GigaAM и Qwen загружаются только по явному действию в веб-интерфейсе и сохраняются в Docker volumes.
+## Сборка дистрибутивов
 
-### CPU-режим Docker
+Каждый пакет нужно собирать нативно на целевой ОС. Скрипты создают wheel приложения, загружают исходный код PyApp `0.29.0`, собирают launcher через Rust/Cargo и помещают архив в `dist/`.
 
-1. В `docker-compose.yml` закомментируйте блоки `deploy:` у сервисов `ollama` и `pipeline`.
-2. В `.env` задайте:
+| ОС | Среда сборки | Команда | Результат |
+| --- | --- | --- | --- |
+| Linux | Linux x86_64, `python3` с `setuptools`, Rust/Cargo, `curl` | `scripts/linux/build-pyapp.sh` | `dist/VideoNotes-linux-x86_64.tar.gz` |
+| Windows | Windows x86_64, Python 3.13+ с `setuptools`, Rust/Cargo, PowerShell, `tar` | `.\scripts\windows\build-pyapp.ps1` | `dist\VideoNotes-windows-x86_64.zip` |
+| macOS | macOS целевой архитектуры, Python 3.13+ с `setuptools`, Xcode Command Line Tools, Rust/Cargo, `curl` | `scripts/macos/build-pyapp.sh` | `dist/VideoNotes-macos-<arch>.zip` |
 
-   ```dotenv
-   ASR_DEVICE=cpu
-   ```
+Для публичного распространения macOS-сборки подпишите и нотарифицируйте `VideoNotes.app` сертификатом Apple Developer ID после сборки. Скрипт не выполняет подпись, так как сертификат и учётные данные издателя не входят в репозиторий.
 
-3. Выполните `docker compose up -d --build`.
+## Docker
 
-## Локальный запуск
+Docker подходит для запуска на сервере или машине разработчика.
 
-### Windows
+```bash
+cp .env.example .env
+docker compose up -d --build
+```
 
-1. Запустите `scripts/windows/setup.bat`.
-2. Перетащите видео на `scripts/windows/process.bat`, либо запустите `scripts/windows/watch.bat` и положите видео в `runtime/in/`.
+Откройте `http://localhost:8090`, настройте модели и запустите задачу. Для NVIDIA GPU установите NVIDIA Container Toolkit и задайте `ASR_DEVICE=cuda` в `.env`. Для CPU закомментируйте блоки `deploy:` у `ollama` и `pipeline` в `docker-compose.yml`, затем задайте `ASR_DEVICE=cpu`.
 
-`watch.bat` переносит успешно обработанные файлы в `runtime/in/processed/`, а завершившиеся ошибкой — в `runtime/in/failed/`.
+## Локальный запуск из исходников
 
-### Linux и macOS
+Требуются Python 3.13+, `ffmpeg` в `PATH` и Ollama.
 
 ```bash
 python3 -m venv .venv
@@ -96,102 +118,41 @@ python3 -m venv .venv
 .venv/bin/python app/pipeline/main.py process /путь/к/видео.mp4
 ```
 
-Только извлечение WAV-аудиодорожки:
+Только извлечение моно-WAV 16 кГц:
 
 ```bash
 .venv/bin/python app/pipeline/main.py extract-audio /путь/к/видео.mp4
 ```
 
-Для запуска web-интерфейса без Docker:
+Web-интерфейс без Docker:
 
 ```bash
 .venv/bin/python app/web.py 8090
 ```
 
-## Linux-дистрибутив
+Для Windows исходников используйте `scripts/windows/setup.bat`, затем перетащите видео на `scripts/windows/process.bat` либо запустите `scripts/windows/watch.bat`.
 
-Для Linux x86_64 доступна сборка локального launcher-приложения на PyApp. Оно запускает интерфейс в браузере на `127.0.0.1:8090`, открывает его автоматически и хранит данные в `~/.local/share/VideoNotes` (или в `$XDG_DATA_HOME/VideoNotes`). Docker для этого режима не нужен. При первом запуске PyApp скачивает Python 3.13 и Python-зависимости.
+## Как работает
 
-На компьютере пользователя должны быть установлены `ffmpeg` и [Ollama](https://ollama.com/download/linux). Модели не входят в архив: их выбирают и скачивают через «Настройки моделей» после первого запуска.
-
-Сборка архива выполняется на Linux x86_64 и требует `python3` с `setuptools`, Rust/Cargo и `curl`:
-
-```bash
-scripts/linux/build-pyapp.sh
-```
-
-Получится `dist/VideoNotes-linux-x86_64.tar.gz`. Распакуйте его и запустите `./install.sh`; launcher установится в `~/.local/bin/videonotes` и появится в меню приложений.
-
-## Windows-дистрибутив
-
-Сборка выполняется нативно на Windows x86_64 через PowerShell и требует Python 3.13+ с `setuptools`, Rust/Cargo и `tar`:
-
-```powershell
-.\scripts\windows\build-pyapp.ps1
-```
-
-Результат: `dist\VideoNotes-windows-x86_64.zip`. После распаковки выполните `install.ps1`; приложение появится в меню «Пуск», а данные будут храниться в `%LOCALAPPDATA%\VideoNotes`.
-
-## macOS-дистрибутив
-
-Сборка выполняется нативно на целевом Mac (`arm64` или `x86_64`) и требует Python 3.13+ с `setuptools`, Xcode Command Line Tools, Rust/Cargo и `curl`:
-
-```bash
-scripts/macos/build-pyapp.sh
-```
-
-Результат: `dist/VideoNotes-macos-<arch>.zip`. В архиве находится `VideoNotes.app`; `./install.sh` скопирует его в `/Applications`. Данные хранятся в `~/Library/Application Support/VideoNotes`.
-
-## Настройка
-
-`config/config.json` используется в локальном режиме, `config/docker.json` — в Docker. Пути в `output.dir` разрешаются относительно корня проекта, а не текущей директории терминала.
-
-| Параметр | Назначение | Значение по умолчанию |
+| Этап | Инструмент | Результат |
 | --- | --- | --- |
-| `asr.model` | Модель GigaAM | `v3_e2e_rnnt` |
-| `asr.model_dir` | Папка весов ASR | `runtime/models/gigaam` |
-| `asr.vad_threshold` | Порог Silero VAD | `0.5` |
-| `asr.max_segment_seconds` | Максимальная длина фрагмента ASR | `22` |
-| `frames.scene_threshold` | Чувствительность к смене сцен | `0.3` |
-| `frames.interval_seconds` | Интервал регулярных кадров | `90` |
-| `frames.max_frames` | Лимит выбранных кадров | `100` |
-| `frames.width` | Ширина кадра для VLM | `1280` |
-| `llm.provider` | Провайдер LLM: `ollama` или `stub` | `ollama` |
-| `llm.ollama_url` | Адрес Ollama | зависит от режима |
-| `llm.vlm_model` | VLM для кадров | `qwen2.5vl:7b` |
-| `llm.llm_model` | LLM для конспекта | `qwen2.5:14b-instruct-q4_K_M` |
-| `llm.temperature` | Температура генерации | `0.2` |
-| `llm.chunk_words` | Размер блока транскрипта для map-reduce | `2000` |
-| `output.dir` | Папка готовых конспектов | `output` в Docker |
-| `watch.poll_seconds` | Интервал проверки папки `runtime/in/` | `3` |
-| `watch.move_on_success` | Переносить успешно обработанное видео | `true` |
+| Извлечение аудио | ffmpeg | Моно-аудио 16 кГц |
+| Поиск речи | Silero VAD | Фрагменты речи до 22 секунд |
+| Распознавание | GigaAM v3 e2e RNN-T | Транскрипция с таймкодами |
+| Выбор кадров | ffmpeg | Смены сцен и интервальные кадры |
+| Анализ экрана | Ollama VLM | Описание и важность кадра |
+| Конспект | Ollama LLM | Map-reduce выжимка транскрипта и кадров |
 
-Переменные `.env` переопределяют настройки Docker:
+## Настройка и диагностика
 
-| Переменная | Назначение |
+Локальный режим использует `config/config.json`, Docker - `config/docker.json`. `OLLAMA_URL` и `ASR_DEVICE` переопределяют значения конфигурации. Выбор моделей из интерфейса сохраняется в `runtime/tmp/model_settings.json`.
+
+| Проверка | Способ |
 | --- | --- |
-| `OLLAMA_URL` | URL Ollama; по умолчанию `http://ollama:11434` внутри стека |
-| `ASR_DEVICE` | Устройство GigaAM: `cuda`, `cpu` или `auto` |
-| `PORT` | Порт web-интерфейса |
-| `PYTORCH_INDEX` | Индекс пакетов PyTorch при сборке образа |
-
-## Результаты и диагностика
-
-Структура результата:
-
-```text
-<output>/<имя_видео>/
-├── конспект.md
-├── транскрипция.md
-└── кадры/
-```
-
-- Проверка локального стека: `python app/pipeline/main.py selftest`.
-- Статус web-стека: `GET /api/health`.
-- Каталог и состояние моделей: `GET /api/models`.
-- Логи задач: `runtime/logs/job_<id>.log`.
-- В интерфейсе загрузка только создаёт задачу; её нужно явно запустить кнопкой «Запустить». Задачи выполняются по одной.
-- Выбранные модели сохраняются в `runtime/tmp/model_settings.json`; задача фиксирует их набор при запуске.
+| Локальный стек | `python app/pipeline/main.py selftest` |
+| Статус web-стека | `GET /api/health` |
+| Каталог моделей | `GET /api/models` |
+| Лог задачи | `runtime/logs/job_<id>.log` |
 
 ## API
 
