@@ -16,7 +16,18 @@ echo [1/5] Виртуальное окружение...
 if not exist venv\Scripts\python.exe python -m venv venv
 call venv\Scripts\python.exe -m pip install -U pip >nul
 
-echo [2/5] Зависимости (первый раз ~3 ГБ: torch CUDA, gigaam)...
+echo [2/5] Зависимости (первый раз ~2.5 ГБ: torch CUDA, gigaam)...
+echo     PyTorch CUDA (cu130)...
+call venv\Scripts\pip install torch==2.14.0 torchaudio==2.11.0 --extra-index-url https://download.pytorch.org/whl/cu130
+if errorlevel 1 (
+  echo [ОШИБКА] torch CUDA (cu130) не встал.
+  echo Если старый драйвер GPU, повтори вручную с cu126:
+  echo   venv\Scripts\pip install torch==2.14.0 torchaudio==2.11.0 --extra-index-url https://download.pytorch.org/whl/cu126
+  pause
+  exit /b 1
+)
+call venv\Scripts\python.exe -c "import torch; print('  CUDA доступен:', torch.cuda.is_available())"
+echo     Остальные пакеты...
 call venv\Scripts\pip install -r requirements.txt
 if errorlevel 1 (
   echo [ОШИБКА] pip install не удался. Прогони ещё раз — часто помогает.

@@ -132,6 +132,16 @@ Web-интерфейс без Docker:
 
 Для Windows исходников используйте `scripts/windows/setup.bat`, затем перетащите видео на `scripts/windows/process.bat` либо запустите `scripts/windows/watch.bat`.
 
+> **GPU на Windows:** `pip install torch` по умолчанию ставит CPU-сборку даже при наличии видеокарты (на Linux сразу идёт CUDA). `setup.bat` ставит torch с `--extra-index-url https://download.pytorch.org/whl/cu130` и показывает `CUDA доступен: True/False`. Если в веб-интерфейсе «Ускорение GPU не обнаружено — работает CPU», а видеокарта есть — переустановите torch вручную:
+>
+> ```powershell
+> .\venv\Scripts\pip uninstall torch torchaudio -y
+> .\venv\Scripts\pip install torch==2.14.0 torchaudio==2.11.0 --index-url https://download.pytorch.org/whl/cu130
+> .\venv\Scripts\python.exe -c "import torch; print(torch.cuda.is_available())"  # должно быть True
+> ```
+>
+> На старых драйверах замените `cu130` на `cu126`. После переустановки перезапустите `app/web.py`.
+
 ## Как работает
 
 | Этап | Инструмент | Результат |
