@@ -16,6 +16,22 @@ class ChunkResult:
     words: list = field(default_factory=list)  # (abs_start, abs_end, text)
 
 
+def select_device(device: str = "auto") -> str:
+    """Выбор устройства для ASR: cuda → mps (Apple Silicon) → cpu.
+
+    GigaAM сам знает только cuda/cpu, поэтому MPS выбираем здесь.
+    Явно заданное device (например, из ASR_DEVICE) возвращается как есть.
+    """
+    if device != "auto":
+        return device
+    import torch
+    if torch.cuda.is_available():
+        return "cuda"
+    if getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
 class GigaAMASR:
     def __init__(self, cfg: dict, log):
         self.cfg = cfg
@@ -34,9 +50,7 @@ class GigaAMASR:
         self.log.info("Загрузка GigaAM %s (первый запуск — скачивание около 449 МБ)...",
                       self.cfg.get("model", "v3_e2e_rnnt"))
         kwargs = {}
-        device = self.cfg.get("device", "auto")
-        if device != "auto":
-            kwargs["device"] = device
+        kwargs["device"] = select_device(self.cfg.get("device", "auto"))
         self.model = gigaam.load_model(
             self.cfg.get("model", "v3_e2e_rnnt"),
             download_root=str(model_dir),

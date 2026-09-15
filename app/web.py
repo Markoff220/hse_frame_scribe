@@ -157,6 +157,8 @@ def _gpu_info() -> dict:
             import torch
             if torch.cuda.is_available():
                 _GPU = {"available": True, "name": torch.cuda.get_device_name(0)}
+            elif getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
+                _GPU = {"available": True, "name": "Apple Silicon (MPS)"}
             else:
                 _GPU = {"available": False, "name": "CPU"}
         except Exception:
