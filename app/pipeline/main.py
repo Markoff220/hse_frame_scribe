@@ -2,6 +2,7 @@
 
 Команды:
   python app/pipeline/main.py process <video>   — обработать одно видео
+  python app/pipeline/main.py transcribe <video> — только транскрипция (без кадров и Ollama)
   python app/pipeline/main.py watch             — следить за папкой runtime/in/
   python app/pipeline/main.py selftest          — проверка установки (модели, ffmpeg, Ollama)
 """
@@ -28,38 +29,11 @@ def process_video(video: Path, cfg: dict, log) -> Path:
     duration = A.ffprobe_duration(video)
     log.info("Длительность: %s", fmt_ts(duration))
 
-    work = ROOT / "runtime" / "tmp" / f"{sanitize(video.stem)}_{datetime.now():%H%M%S}"
-    work.mkdir(parents=True, exist_ok=True)
+    work = _work_dir(video)
 
-    # --- 1. Аудио ---
-    log.info("[1/5] Извлечение аудио...")
-    wav = work / "audio.wav"
-    A.extract_audio(video, wav)
-
-    # --- 2. VAD ---
-    log.info("[2/5] Поиск речи (Silero VAD)...")
-    segments = A.vad_segments(wav, threshold=cfg["asr"].get("vad_threshold", 0.5))
-    chunks = A.merge_split_segments(segments, max_len=cfg["asr"].get("max_segment_seconds", 22))
-    log.info("Речевых сегментов: %d, чанков для ASR: %d", len(segments), len(chunks))
-
-    # --- 3. ASR ---
-    log.info("[3/5] Транскрипция (GigaAM %s)...", cfg["asr"].get("model", "v3_e2e_rnnt"))
-    from asr import GigaAMASR
-    asr = GigaAMASR(cfg["asr"], log)
-    asr.load()
-    lines: list[tuple[float, str]] = []
-    try:
-        for i, (cs, ce) in enumerate(chunks, 1):
-            chunk_wav = work / f"chunk_{i:04d}.wav"
-            A.cut_wav(wav, cs, ce, chunk_wav)
-            res = asr.transcribe_chunk(chunk_wav, cs)
-            if res.text:
-                lines.append((cs, res.text))
-            if i % 10 == 0 or i == len(chunks):
-                log.info("  ASR: %d/%d (%.0f%%)", i, len(chunks), 100 * i / max(1, len(chunks)))
-    finally:
-        asr.unload()
-    log.info("Транскрипция готова: %d строк, ~%d слов", len(lines), sum(len(l[1].split()) for l in lines))
+    # --- 1–3. Аудио, VAD, ASR ---
+    segs = _speech_to_text(video, cfg, log, work, total_steps=5)
+    lines = [(cs, text) for cs, _ce, text in segs]
 
     # --- 4. Кадры ---
     log.info("[4/5] Кадры: детект сцен + извлечение...")
@@ -94,14 +68,7 @@ def process_video(video: Path, cfg: dict, log) -> Path:
     concept_body = S.summarize(llm, lines, frames, log,
                                max_words=cfg["llm"].get("chunk_words", 2000))
 
-    out_root = Path(cfg["output"]["dir"])
-    if not out_root.is_absolute():
-        out_root = (ROOT / out_root).resolve()
-    out_dir = out_root / sanitize(video.stem)
-    n = 2
-    while out_dir.exists():
-        out_dir = out_root / f"{sanitize(video.stem)}_{n}"
-        n += 1
+    out_dir = _new_out_dir(cfg, video)
     (out_dir / "кадры").mkdir(parents=True)
     for f in frames:
         shutil.copy2(frames_dir / f["file"], out_dir / "кадры" / f["file"])
@@ -116,13 +83,48 @@ def process_video(video: Path, cfg: dict, log) -> Path:
     return concept
 
 
-def extract_audio_track(video: Path, cfg: dict, log) -> Path:
-    """Видео -> WAV без обращения к ASR, VLM или LLM."""
+def transcribe_video(video: Path, cfg: dict, log) -> Path:
+    """Только транскрипция: аудио -> VAD -> GigaAM -> транскрипция.md.
+
+    Без кадров, VLM и LLM, Ollama не нужна. Текст склеивается в абзацы
+    с таймкодом в начале каждого. Возвращает путь к транскрипция.md.
+    """
+    t_start = time.time()
     video = video.resolve()
     if not is_video(video):
         raise ValueError(f"Не видео: {video}")
+    log.info("Видео: %s (%.1f МБ)", video.name, video.stat().st_size / 1e6)
+
     import audio as A
     duration = A.ffprobe_duration(video)
+    log.info("Длительность: %s", fmt_ts(duration))
+
+    work = _work_dir(video)
+    try:
+        segs = _speech_to_text(video, cfg, log, work, total_steps=3)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)  # WAV + чанки больше не нужны
+
+    import report as R
+    paragraphs = R.group_paragraphs(segs)
+    out_dir = _new_out_dir(cfg, video)
+    out_dir.mkdir(parents=True)
+    out = out_dir / "транскрипция.md"
+    R.write_transcript(out, sanitize(video.stem), duration, paragraphs,
+                       cfg["asr"].get("model", "v3_e2e_rnnt"))
+    log.info("Абзацев: %d", len(paragraphs))
+    log.info("Готово за %.1f мин: %s", (time.time() - t_start) / 60, out)
+    return out
+
+
+def _work_dir(video: Path) -> Path:
+    work = ROOT / "runtime" / "tmp" / f"{sanitize(video.stem)}_{datetime.now():%H%M%S}"
+    work.mkdir(parents=True, exist_ok=True)
+    return work
+
+
+def _new_out_dir(cfg: dict, video: Path) -> Path:
+    """Свободная папка output/<имя видео>[_N] (ещё не создана)."""
     out_root = Path(cfg["output"]["dir"])
     if not out_root.is_absolute():
         out_root = (ROOT / out_root).resolve()
@@ -131,6 +133,57 @@ def extract_audio_track(video: Path, cfg: dict, log) -> Path:
     while out_dir.exists():
         out_dir = out_root / f"{sanitize(video.stem)}_{n}"
         n += 1
+    return out_dir
+
+
+def _speech_to_text(video: Path, cfg: dict, log, work: Path,
+                    total_steps: int) -> list[tuple[float, float, str]]:
+    """Шаги 1–3 любого режима: аудио -> Silero VAD -> GigaAM.
+
+    Возвращает [(start, end, text), ...] только для чанков с речью.
+    """
+    import audio as A
+
+    # --- 1. Аудио ---
+    log.info("[1/%d] Извлечение аудио...", total_steps)
+    wav = work / "audio.wav"
+    A.extract_audio(video, wav)
+
+    # --- 2. VAD ---
+    log.info("[2/%d] Поиск речи (Silero VAD)...", total_steps)
+    segments = A.vad_segments(wav, threshold=cfg["asr"].get("vad_threshold", 0.5))
+    chunks = A.merge_split_segments(segments, max_len=cfg["asr"].get("max_segment_seconds", 22))
+    log.info("Речевых сегментов: %d, чанков для ASR: %d", len(segments), len(chunks))
+
+    # --- 3. ASR ---
+    log.info("[3/%d] Транскрипция (GigaAM %s)...", total_steps, cfg["asr"].get("model", "v3_e2e_rnnt"))
+    from asr import GigaAMASR
+    asr = GigaAMASR(cfg["asr"], log)
+    asr.load()
+    segs: list[tuple[float, float, str]] = []
+    try:
+        for i, (cs, ce) in enumerate(chunks, 1):
+            chunk_wav = work / f"chunk_{i:04d}.wav"
+            A.cut_wav(wav, cs, ce, chunk_wav)
+            res = asr.transcribe_chunk(chunk_wav, cs)
+            if res.text:
+                segs.append((cs, ce, res.text))
+            if i % 10 == 0 or i == len(chunks):
+                log.info("  ASR: %d/%d (%.0f%%)", i, len(chunks), 100 * i / max(1, len(chunks)))
+    finally:
+        asr.unload()
+    log.info("Транскрипция готова: %d строк, ~%d слов", len(segs), sum(len(s[2].split()) for s in segs))
+    return segs
+
+
+def extract_audio_track(video: Path, cfg: dict, log) -> Path:
+    """Видео -> WAV без обращения к ASR, VLM или LLM."""
+    video = video.resolve()
+    if not is_video(video):
+        raise ValueError(f"Не видео: {video}")
+    import audio as A
+    duration = A.ffprobe_duration(video)
+    out_dir = _new_out_dir(cfg, video)
     out_dir.mkdir(parents=True)
     audio_path = out_dir / "audio.wav"
     log.info("[1/1] Извлечение аудиодорожки (%s)...", fmt_ts(duration))
@@ -252,6 +305,12 @@ def main() -> int:
             log.error("Нужен путь к видео: process <video>")
             return 1
         process_video(Path(args[1]), cfg, log)
+        return 0
+    if cmd == "transcribe":
+        if len(args) < 2:
+            log.error("Нужен путь к видео: transcribe <video>")
+            return 1
+        transcribe_video(Path(args[1]), cfg, log)
         return 0
     if cmd == "extract-audio":
         if len(args) < 2:

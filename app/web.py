@@ -11,7 +11,7 @@ API:
   POST /api/upload           — загрузка видео (multipart, поле "file")
   GET  /api/jobs             — список задач
   GET  /api/jobs/{id}/log    — лог задачи
-  GET  /api/jobs/{id}/download — конспект.md
+  GET  /api/jobs/{id}/download — конспект.md / транскрипция.md / audio.wav
   GET  /api/health           — здоровье (модели, очередь)
 """
 import json
@@ -34,7 +34,7 @@ BASE = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE / "pipeline"))
 
 from common import ROOT, VIDEO_EXTS, load_config, sanitize, setup_logging  # noqa: E402
-from main import extract_audio_track, process_video  # noqa: E402
+from main import extract_audio_track, process_video, transcribe_video  # noqa: E402
 
 app = FastAPI(title="VideoNotes")
 cfg = load_config()
@@ -195,7 +195,8 @@ def _save_jobs() -> None:
     """Персистим состояние задач, чтобы ссылки пережили рестарт контейнера."""
     try:
         JOBS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        JOBS_FILE.write_text(json.dumps(list(JOBS.values()), ensure_ascii=False, indent=1))
+        JOBS_FILE.write_text(json.dumps(list(JOBS.values()), ensure_ascii=False, indent=1),
+                             encoding="utf-8")
     except Exception:  # noqa: BLE001
         pass
 
@@ -204,7 +205,12 @@ def _load_jobs() -> None:
     if not JOBS_FILE.exists():
         return
     try:
-        for j in json.loads(JOBS_FILE.read_text(encoding="utf-8")):
+        raw = JOBS_FILE.read_bytes()
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:  # старые версии писали в кодировке системы (cp1251 на Windows)
+            text = raw.decode("cp1251", errors="replace")
+        for j in json.loads(text):
             jid = j.get("id")
             if not jid or jid in JOBS:
                 continue
@@ -336,6 +342,9 @@ def worker() -> None:
             if job.get("mode", "full") == "audio":
                 job["stage"] = "Извлечение аудиодорожки..."
                 job["out"] = str(extract_audio_track(Path(job["path"]), _job_config(job), jlog))
+            elif job.get("mode") == "transcript":
+                job["stage"] = "Загрузка модели распознавания..."
+                job["out"] = str(transcribe_video(Path(job["path"]), _job_config(job), jlog))
             else:
                 job["stage"] = "Загрузка моделей..."
                 job["out"] = str(process_video(Path(job["path"]), _job_config(job), jlog))
@@ -434,12 +443,15 @@ def save_models(payload: dict) -> dict:
     return {"settings": MODEL_SETTINGS}
 
 
+JOB_MODES = {"full", "transcript", "audio"}
+
+
 @app.post("/api/upload")
 async def upload(file: UploadFile = File(...), mode: str = Form("full")) -> dict:
     name = file.filename or "video.mp4"
     if Path(name).suffix.lower() not in VIDEO_EXTS:
         raise HTTPException(400, f"Не видео: {name} (допустимо: {', '.join(sorted(VIDEO_EXTS))})")
-    if mode not in {"full", "audio"}:
+    if mode not in JOB_MODES:
         raise HTTPException(400, "Неизвестный режим обработки")
     job_id = uuid.uuid4().hex[:8]
     base = sanitize(name)
@@ -487,6 +499,10 @@ def start_job(job_id: str) -> dict:
             missing = _missing_model_roles(MODEL_SETTINGS)
             if missing:
                 raise HTTPException(409, f"Скачайте выбранные модели: {', '.join(missing)}")
+            job["models"] = deepcopy(MODEL_SETTINGS)
+        elif job.get("mode") == "transcript":
+            if _asr_status(MODEL_SETTINGS["asr_model"]) != "ok":
+                raise HTTPException(409, "Скачайте модель ASR в «Настройках моделей»")
             job["models"] = deepcopy(MODEL_SETTINGS)
         job["status"] = "queued"
         job["stage"] = "В очереди"
@@ -548,6 +564,9 @@ def job_download(job_id: str) -> FileResponse:
         )
     if job.get("mode", "full") == "audio":
         return FileResponse(dest, media_type="audio/wav", filename="audio.wav")
+    if job.get("mode") == "transcript":
+        # имя файла = имя видео, чтобы несколько скачанных пар не назывались одинаково
+        return FileResponse(dest, media_type="text/markdown", filename=f"{dest.parent.name}.md")
     return FileResponse(dest, media_type="text/markdown", filename="конспект.md")
 
 

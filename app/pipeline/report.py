@@ -5,6 +5,43 @@ from pathlib import Path
 from common import fmt_ts
 
 
+def group_paragraphs(segs: list[tuple[float, float, str]], pause: float = 2.0,
+                     long_pause: float = 8.0, min_len: float = 15.0,
+                     soft_len: float = 45.0, hard_len: float = 120.0) -> list[tuple[float, str]]:
+    """Склеивает ASR-чанки [(start, end, text)] в абзацы [(start, text)].
+
+    Новый абзац начинается, если:
+      - пауза перед чанком >= long_pause с;
+      - пауза >= pause с и абзац уже длиннее min_len с;
+      - абзац длиннее soft_len с и предыдущий кусок закончил предложение;
+      - абзац длиннее hard_len с (для моделей без пунктуации).
+    """
+    out: list[tuple[float, str]] = []
+    buf: list[str] = []
+    cur_start = prev_end = 0.0
+    for start, end, text in segs:
+        text = text.strip()
+        if not text:
+            continue
+        if buf:
+            length = prev_end - cur_start
+            gap = start - prev_end
+            sentence_end = buf[-1].endswith((".", "?", "!", "…"))
+            if (gap >= long_pause
+                    or (gap >= pause and length >= min_len)
+                    or (length >= soft_len and sentence_end)
+                    or length >= hard_len):
+                out.append((cur_start, " ".join(buf)))
+                buf = []
+        if not buf:
+            cur_start = start
+        buf.append(text)
+        prev_end = end
+    if buf:
+        out.append((cur_start, " ".join(buf)))
+    return out
+
+
 def write_transcript(path: Path, title: str, duration: float,
                      lines: list[tuple[float, str]], model_name: str) -> None:
     body = "\n\n".join(f"**[{fmt_ts(t)}]** {text}" for t, text in lines)

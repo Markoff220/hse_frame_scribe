@@ -25,7 +25,7 @@
   .drop:hover,.drop.over { border-color:var(--accent); background:var(--card2); }
   .drop .big { font-size:17px; font-weight:600; }
    .drop .hint,.uploading,.empty { color:var(--muted); font-size:13px; margin-top:6px; }
-   .modes { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-bottom:14px; }.mode { position:relative; display:block; cursor:pointer; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:13px 14px; }.mode:has(input:checked) { border-color:var(--accent); background:#152039; }.mode input { position:absolute; opacity:0; }.mode strong { display:block; font-size:14px; }.mode span { display:block; color:var(--muted); font-size:12px; margin-top:3px; }
+   .modes { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-bottom:14px; }.mode { position:relative; display:block; cursor:pointer; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:13px 14px; }.mode:has(input:checked) { border-color:var(--accent); background:#152039; }.mode input { position:absolute; opacity:0; }.mode strong { display:block; font-size:14px; }.mode span { display:block; color:var(--muted); font-size:12px; margin-top:3px; }
    .drop input { display:none; }
    .uploading { min-height:22px; margin-top:10px; }
   h2 { font-size:15px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin:28px 0 12px; }
@@ -64,7 +64,8 @@
   <section class="panel" id="panel-processor">
     <div class="modes" role="radiogroup" aria-label="Режим обработки">
       <label class="mode"><input type="radio" name="mode" value="full" checked><strong>Полная обработка</strong><span>Транскрипция, кадры, анализ изображений и нейроконспект.</span></label>
-      <label class="mode"><input type="radio" name="mode" value="audio"><strong>Транскрибация</strong><span>Только извлечение WAV-аудиодорожки, без моделей.</span></label>
+      <label class="mode"><input type="radio" name="mode" value="transcript"><strong>Транскрибация</strong><span>Текст пары абзацами с таймкодами (GigaAM). Без кадров и Ollama.</span></label>
+      <label class="mode"><input type="radio" name="mode" value="audio"><strong>Только аудио</strong><span>Вырезать WAV-дорожку, без моделей.</span></label>
     </div>
     <div class="drop" id="drop">
       <div class="big">Перетащи видео сюда</div>
@@ -204,10 +205,10 @@ $('save-models').onclick = async () => {
 function jobCard(j, records) {
   const [label, cls] = BADGE[j.status] || [j.status, 'b-queued'];
   const el = document.createElement('div'); el.className = 'job';
-  const mode = j.mode === 'audio' ? 'аудиодорожка WAV' : 'полная обработка';
+  const mode = {audio:'аудиодорожка WAV', transcript:'транскрибация'}[j.mode] || 'полная обработка';
   const meta = `${mode} · ${j.status === 'error' ? (j.error || 'ошибка') : j.status === 'done' ? `готово в ${j.finished}` : (j.stage || '…')}`;
   const dir = j.status === 'done' ? resultDir(j) : '';
-  el.innerHTML = `<div class="info"><div class="name"></div><div class="meta">${new Date(j.created).toLocaleString('ru')} · ${meta}</div></div><span class="badge ${cls}">${label}</span><div class="acts"><button data-log>Лог</button>${j.status === 'uploaded' && !records ? '<button class="primary" data-start>▶ Запустить</button>' : ''}${j.status === 'done' && j.mode === 'audio' ? `<a class="btn primary" href="/api/jobs/${j.id}/download">Скачать WAV</a>` : ''}${j.status === 'done' ? `<button class="dir" data-dir title="Папка с результатом — кликни, чтобы скопировать путь"></button>` : ''}${(j.status === 'uploaded' || records) ? '<button class="delete" data-delete title="Удалить заявку" aria-label="Удалить заявку">×</button>' : ''}</div>`;
+  el.innerHTML = `<div class="info"><div class="name"></div><div class="meta">${new Date(j.created).toLocaleString('ru')} · ${meta}</div></div><span class="badge ${cls}">${label}</span><div class="acts"><button data-log>Лог</button>${j.status === 'uploaded' && !records ? '<button class="primary" data-start>▶ Запустить</button>' : ''}${j.status === 'done' && j.mode === 'audio' ? `<a class="btn primary" href="/api/jobs/${j.id}/download">Скачать WAV</a>` : ''}${j.status === 'done' && j.mode === 'transcript' ? `<a class="btn primary" href="/api/jobs/${j.id}/download">Скачать .md</a>` : ''}${j.status === 'done' ? `<button class="dir" data-dir title="Папка с результатом — кликни, чтобы скопировать путь"></button>` : ''}${(j.status === 'uploaded' || records) ? '<button class="delete" data-delete title="Удалить заявку" aria-label="Удалить заявку">×</button>' : ''}</div>`;
   el.querySelector('.name').textContent = j.name;
   el.querySelector('[data-log]').onclick = () => showLog(j.id);
   const start = el.querySelector('[data-start]'); if (start) start.onclick = () => startJob(j.id);
@@ -219,7 +220,7 @@ function jobCard(j, records) {
 let healthData = null;
 function resultDir(j) {
   // j.out — путь к конспект.md (в контейнере /app/output/...); показываем папку на хосте
-  let d = (j.out || '').replace(/\/[^/]*$/, '');
+  let d = (j.out || '').replace(/[\\/][^\\/]*$/, '');  // и / (Linux/Docker), и \ (Windows)
   const host = healthData?.output_dir;
   if (host && d.startsWith('/app/output')) d = host + d.slice('/app/output'.length);
   return d;
