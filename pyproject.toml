@@ -6,10 +6,14 @@ build-backend = "setuptools.build_meta"
 name = "videonotes"
 version = "0.1.2"
 description = "Локальное приложение для создания конспектов из видео"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
-  "torch==2.14.0",
-  "torchaudio==2.11.0",
+  # Intel Mac: torch 2.2.2 — последняя версия с x86_64-колёсами для macOS
+  # (с 2.3 колёса только arm64); Apple Silicon и остальное — 2.14.0.
+  "torch==2.2.2; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+  "torch==2.14.0; sys_platform != 'darwin' or platform_machine != 'x86_64'",
+  "torchaudio==2.2.2; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+  "torchaudio==2.11.0; sys_platform != 'darwin' or platform_machine != 'x86_64'",
   "gigaam @ https://github.com/salute-developers/GigaAM/archive/refs/heads/main.zip",
   "silero-vad==6.2.1",
   "soundfile==0.14.0",

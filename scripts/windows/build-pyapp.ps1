@@ -29,6 +29,8 @@ $env:PYAPP_PROJECT_PATH = $Wheel.Name
 $env:PYAPP_EXEC_MODULE = "videonotes.desktop"
 $env:PYAPP_IS_GUI = "1"
 $env:PYAPP_PYTHON_VERSION = "3.13"
+# PyPI отдаёт для Windows CPU-сборку torch; берём CUDA-билд из индекса PyTorch
+$env:PYAPP_PIP_EXTRA_ARGS = "--extra-index-url https://download.pytorch.org/whl/cu130"
 cargo build --release
 Pop-Location
 

@@ -1,0 +1,2 @@
+# .bat-файлы — всегда CRLF: cmd.exe режет строки, если переносы unix'овские
+*.bat text eol=crlf

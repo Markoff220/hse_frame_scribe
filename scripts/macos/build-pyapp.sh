@@ -7,6 +7,10 @@ BUILD_DIR="$ROOT/dist/macos/build"
 PACKAGE_DIR="$BUILD_DIR/VideoNotes-macos-$ARCH"
 APP_DIR="$PACKAGE_DIR/VideoNotes.app"
 PYAPP_VERSION="0.29.0"
+# Intel Mac: torch 2.2.2 — последняя версия с x86_64-колёсами, она поддерживает
+# Python 3.8–3.12, поэтому для x86_64-сборки PyApp ставит Python 3.12.
+# Apple Silicon: torch 2.14.0 (arm64) работает на 3.13.
+if [ "$ARCH" = "x86_64" ]; then PYAPP_PYTHON_VERSION="3.12"; else PYAPP_PYTHON_VERSION="3.13"; fi
 
 command -v python3 >/dev/null || { echo "Не найден python3" >&2; exit 1; }
 command -v cargo >/dev/null || { echo "Не найден cargo. Установите Rust: https://rustup.rs" >&2; exit 1; }
@@ -37,7 +41,7 @@ cp "$WHEEL" "$PYAPP_SOURCE/$WHEEL_NAME"
   PYAPP_PROJECT_PATH="$WHEEL_NAME" \
   PYAPP_EXEC_MODULE="videonotes.desktop" \
   PYAPP_IS_GUI=1 \
-  PYAPP_PYTHON_VERSION="3.13" \
+  PYAPP_PYTHON_VERSION="$PYAPP_PYTHON_VERSION" \
   cargo build --release
 )
 

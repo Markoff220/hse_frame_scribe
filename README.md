@@ -92,7 +92,7 @@ cd VideoNotes-macos-<arch>
 | --- | --- | --- | --- |
 | Linux | Linux x86_64, `python3` с `setuptools`, Rust/Cargo, `curl` | `scripts/linux/build-pyapp.sh` | `dist/VideoNotes-linux-x86_64.tar.gz` |
 | Windows | Windows x86_64, Python 3.13+ с `setuptools`, Rust/Cargo, PowerShell, `tar` | `.\scripts\windows\build-pyapp.ps1` | `dist\VideoNotes-windows-x86_64.zip` |
-| macOS | macOS целевой архитектуры, Python 3.13+ с `setuptools`, Xcode Command Line Tools, Rust/Cargo, `curl` | `scripts/macos/build-pyapp.sh` | `dist/VideoNotes-macos-<arch>.zip` |
+| macOS | macOS целевой архитектуры, Python с `setuptools` (Apple Silicon — 3.13+, Intel — 3.12), Xcode Command Line Tools, Rust/Cargo, `curl` | `scripts/macos/build-pyapp.sh` | `dist/VideoNotes-macos-<arch>.zip` |
 
 Для публичного распространения macOS-сборки подпишите и нотарифицируйте `VideoNotes.app` сертификатом Apple Developer ID после сборки. Скрипт не выполняет подпись, так как сертификат и учётные данные издателя не входят в репозиторий.
 
@@ -109,7 +109,7 @@ docker compose up -d --build
 
 ## Локальный запуск из исходников
 
-Требуются Python 3.13+ и `ffmpeg` в `PATH`; Ollama нужна для полной обработки.
+Требуются Python 3.12+ (рекомендуется 3.13; на Intel Mac — 3.12, так как torch 2.2.2 не поддерживает 3.13) и `ffmpeg` в `PATH`; Ollama нужна для полной обработки.
 
 ```bash
 python3 -m venv .venv
@@ -137,6 +137,18 @@ Web-интерфейс без Docker:
 ```
 
 Для Windows исходников используйте `scripts/windows/setup.bat`, затем перетащите видео на `scripts/windows/process.bat` либо запустите `scripts/windows/watch.bat`.
+
+> **GPU на Windows:** `pip install torch` по умолчанию ставит CPU-сборку даже при наличии видеокарты (на Linux сразу идёт CUDA). `setup.bat` ставит torch с `--extra-index-url https://download.pytorch.org/whl/cu130` и показывает `CUDA доступен: True/False`. Если в веб-интерфейсе «Ускорение GPU не обнаружено — работает CPU», а видеокарта есть — переустановите torch вручную:
+>
+> ```powershell
+> .\venv\Scripts\pip uninstall torch torchaudio -y
+> .\venv\Scripts\pip install torch==2.14.0 torchaudio==2.11.0 --index-url https://download.pytorch.org/whl/cu130
+> .\venv\Scripts\python.exe -c "import torch; print(torch.cuda.is_available())"  # должно быть True
+> ```
+>
+> На старых драйверах замените `cu130` на `cu126`. После переустановки перезапустите `app/web.py`.
+
+> **GPU на macOS:** на Apple Silicon ускорение — это MPS (Metal), а не CUDA. Приложение само выбирает устройство: `cuda` → `mps` → `cpu`, в интерфейсе при работе на MPS строка показывает `GPU · Apple Silicon (MPS)`. На Intel Mac GPU-ускорения нет вообще — «работает CPU» ожидаемо. Нюанс установки: у torch 2.14.0 для macOS есть только arm64-колёса, поэтому Intel Mac (`x86_64`) ставит torch 2.2.2 — последнюю версию с x86_64-колёсами (в `requirements.txt` и `pyproject.toml` это уже учтено маркерами `sys_platform == "darwin" and platform_machine == "x86_64"`).
 
 ## Как работает
 
