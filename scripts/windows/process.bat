@@ -10,7 +10,7 @@ if "%~1"=="" (
 )
 
 if not exist venv\Scripts\python.exe (
-  echo Сначала запусти scripts\windows\setup.bat (установка зависимостей)
+  echo Сначала запусти scripts\windows\setup.bat ^(установка зависимостей^)
   pause
   exit /b 1
 )

@@ -1,7 +1,7 @@
 """VideoNotes web: FastAPI + очередь задач + drag&drop UI.
 
-Запуск:  python app/web.py      (локально)
-         docker compose up -d   (в контейнере)
+Запуск:  python app/web.py [port]   (локально; VIDEONOTES_HOST=127.0.0.1 — слушать только этот компьютер)
+         docker compose up -d       (в контейнере)
 
 API:
    GET  /                     — UI
@@ -572,10 +572,15 @@ def job_download(job_id: str) -> FileResponse:
     return FileResponse(dest, media_type="text/markdown", filename="конспект.md")
 
 
+def _server_host() -> str:
+    """Адрес для uvicorn: VIDEONOTES_HOST или 0.0.0.0 (по умолчанию, нужен Docker)."""
+    return os.environ.get("VIDEONOTES_HOST", "").strip() or "0.0.0.0"
+
+
 def run(port: int = 8090, host: str = "0.0.0.0") -> None:
     log.info("VideoNotes web: http://%s:%d", host, port)
     uvicorn.run(app, host=host, port=port, log_level="warning")
 
 
 if __name__ == "__main__":
-    run(port=int(sys.argv[1]) if len(sys.argv) > 1 else 8090)
+    run(port=int(sys.argv[1]) if len(sys.argv) > 1 else 8090, host=_server_host())
