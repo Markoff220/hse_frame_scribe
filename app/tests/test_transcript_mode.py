@@ -130,4 +130,5 @@ def test_transcribe_video_end_to_end(tmp_path, monkeypatch):
     assert "**[00:01]** Фраза с 1 секунды. Фраза с 7 секунды." in text
     assert "**[00:20]** Фраза с 20 секунды." in text
     assert "Длительность: 00:40" in text
+    assert "Источник: Лекция 5.mp4" in text
     assert not list((tmp_path / "runtime" / "tmp").iterdir())  # рабочая папка с WAV удалена

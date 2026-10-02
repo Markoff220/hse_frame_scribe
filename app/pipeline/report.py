@@ -43,13 +43,14 @@ def group_paragraphs(segs: list[tuple[float, float, str]], pause: float = 2.0,
 
 
 def write_transcript(path: Path, title: str, duration: float,
-                     lines: list[tuple[float, str]], model_name: str) -> None:
+                     lines: list[tuple[float, str]], model_name: str,
+                     source_name: str | None = None) -> None:
     body = "\n\n".join(f"**[{fmt_ts(t)}]** {text}" for t, text in lines)
     if not body:
         body = "_(речь не обнаружена)_"
     content = f"""# Транскрипция: {title}
 
-- Источник: {path.name}
+- Источник: {source_name or path.name}
 - Длительность: {fmt_ts(duration)}
 - Модель: {model_name}
 - Дата: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}
