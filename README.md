@@ -136,7 +136,16 @@ Web-интерфейс без Docker:
 .venv/bin/python app/web.py 8090
 ```
 
-Для Windows исходников используйте `scripts/windows/setup.bat`, затем перетащите видео на `scripts/windows/process.bat` либо запустите `scripts/windows/watch.bat`.
+По умолчанию сервер слушает все сетевые интерфейсы (`0.0.0.0`), так что интерфейс доступен и с других устройств в сети. Чтобы открыть его только на этом компьютере, задайте `VIDEONOTES_HOST=127.0.0.1`.
+
+Для Windows исходников сначала запустите `scripts/windows/setup.bat`, затем:
+
+| Скрипт | Что делает |
+| --- | --- |
+| `scripts/windows/web.bat` | Запускает веб-интерфейс на `127.0.0.1:8090` и сам открывает браузер. Если сервер уже запущен, просто открывает браузер. Другой порт: `web.bat 8091` |
+| `scripts/windows/transcribe.bat` | Перетащите на него одно или несколько видео: для каждого получится `транскрипция.md`, без кадров и Ollama |
+| `scripts/windows/process.bat` | Перетащите видео: полная обработка с конспектом |
+| `scripts/windows/watch.bat` | Следит за папкой `runtime/in/` и обрабатывает всё, что туда попадёт |
 
 > **GPU на Windows:** `pip install torch` по умолчанию ставит CPU-сборку даже при наличии видеокарты (на Linux сразу идёт CUDA). `setup.bat` ставит torch с `--extra-index-url https://download.pytorch.org/whl/cu130` и показывает `CUDA доступен: True/False`. Если в веб-интерфейсе «Ускорение GPU не обнаружено — работает CPU», а видеокарта есть — переустановите torch вручную:
 >
@@ -163,7 +172,7 @@ Web-интерфейс без Docker:
 
 ## Настройка и диагностика
 
-Локальный режим использует `config/config.json`, Docker - `config/docker.json`. `OLLAMA_URL` и `ASR_DEVICE` переопределяют значения конфигурации. Выбор моделей из интерфейса сохраняется в `runtime/tmp/model_settings.json`.
+Локальный режим использует `config/config.json`, Docker - `config/docker.json`. `OLLAMA_URL` и `ASR_DEVICE` переопределяют значения конфигурации, `VIDEONOTES_HOST` задаёт адрес веб-сервера (по умолчанию `0.0.0.0`). Выбор моделей из интерфейса сохраняется в `runtime/tmp/model_settings.json`.
 
 | Проверка | Способ |
 | --- | --- |
