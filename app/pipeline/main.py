@@ -3,9 +3,11 @@
 Команды:
   python app/pipeline/main.py process <video>   — обработать одно видео
   python app/pipeline/main.py transcribe <video> — только транскрипция (без кадров и Ollama)
+  python app/pipeline/main.py download-mts <ссылка> [--session-id ID] — скачать запись МТС Линк в MP4
   python app/pipeline/main.py watch             — следить за папкой runtime/in/
   python app/pipeline/main.py selftest          — проверка установки (модели, ffmpeg, Ollama)
 """
+import os
 import shutil
 import sys
 import time
@@ -192,6 +194,17 @@ def extract_audio_track(video: Path, cfg: dict, log) -> Path:
     return audio_path
 
 
+def save_video(video: Path, cfg: dict, log) -> Path:
+    """Режим «Только видео»: перенести MP4 в output/<имя-видео>/запись.mp4."""
+    video = video.resolve()
+    out_dir = _new_out_dir(cfg, video)
+    out_dir.mkdir(parents=True)
+    dest = out_dir / "запись.mp4"
+    shutil.move(str(video), str(dest))
+    log.info("Видео сохранено: %s", dest)
+    return dest
+
+
 def watch(cfg: dict, log) -> None:
     in_dir = ROOT / "runtime" / "in"
     in_dir.mkdir(exist_ok=True)
@@ -317,6 +330,25 @@ def main() -> int:
             log.error("Нужен путь к видео: extract-audio <video>")
             return 1
         extract_audio_track(Path(args[1]), cfg, log)
+        return 0
+    if cmd == "download-mts":
+        if len(args) < 2:
+            log.error("Нужна ссылка на запись: download-mts <ссылка> [--session-id ID]")
+            return 1
+        session_id = os.environ.get("MTS_SESSION_ID")
+        if "--session-id" in args[2:]:
+            i = args.index("--session-id")
+            session_id = args[i + 1] if i + 1 < len(args) else None
+        from mts_link import MtsLinkError, clean_session_id, download_recording
+        tmp = ROOT / "runtime" / "tmp" / "uploads" / f"cli_{datetime.now():%Y%m%d_%H%M%S}"
+        try:
+            video = download_recording(args[1], tmp, session_id=clean_session_id(session_id), log=log)
+            save_video(video, cfg, log)
+        except (ValueError, MtsLinkError) as e:
+            log.error("%s", e)
+            return 1
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
         return 0
     if cmd == "watch":
         watch(cfg, log)
