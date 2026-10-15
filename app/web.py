@@ -9,9 +9,11 @@ API:
    POST /api/models/pull      — скачать модель
    PUT  /api/settings/models  — применить модели
   POST /api/upload           — загрузка видео (multipart, поле "file")
+  POST /api/mts-link         — задача из ссылки на запись МТС Линк
   GET  /api/jobs             — список задач
   GET  /api/jobs/{id}/log    — лог задачи
-  GET  /api/jobs/{id}/download — конспект.md / транскрипция.md / audio.wav
+  GET  /api/jobs/{id}/download — конспект.md / транскрипция.md / audio.wav / MP4
+  GET  /api/jobs/{id}/video  — MP4 записи МТС Линк
   GET  /api/health           — здоровье (модели, очередь)
 """
 import json
@@ -19,6 +21,7 @@ import logging
 import os
 import queue
 import re
+import shutil
 import sys
 import threading
 import uuid
@@ -34,7 +37,7 @@ BASE = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE / "pipeline"))
 
 from common import ROOT, VIDEO_EXTS, load_config, sanitize, setup_logging  # noqa: E402
-from main import extract_audio_track, process_video, transcribe_video  # noqa: E402
+from main import extract_audio_track, process_video, save_video, transcribe_video  # noqa: E402
 
 app = FastAPI(title="VideoNotes")
 cfg = load_config()
@@ -193,12 +196,24 @@ Q: queue.Queue = queue.Queue()
 LOCK = threading.Lock()
 
 
+# Служебные поля задачи: не отдаются в API. sessionId МТС Линк ещё и не пишется на диск.
+_HIDDEN_KEYS = {"path", "source_url", "session_id", "video"}
+_UNSAVED_KEYS = {"session_id"}
+
+
+def _public(job: dict) -> dict:
+    item = {k: v for k, v in job.items() if k not in _HIDDEN_KEYS}
+    video = job.get("video")
+    item["has_video"] = bool(video) and Path(video).is_file()
+    return item
+
+
 def _save_jobs() -> None:
     """Персистим состояние задач, чтобы ссылки пережили рестарт контейнера."""
     try:
         JOBS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        JOBS_FILE.write_text(json.dumps(list(JOBS.values()), ensure_ascii=False, indent=1),
-                             encoding="utf-8")
+        items = [{k: v for k, v in j.items() if k not in _UNSAVED_KEYS} for j in JOBS.values()]
+        JOBS_FILE.write_text(json.dumps(items, ensure_ascii=False, indent=1), encoding="utf-8")
     except Exception:  # noqa: BLE001
         pass
 
@@ -306,6 +321,14 @@ def _missing_model_roles(settings: dict) -> list[str]:
     return missing
 
 
+def _close_job_logger(job_id: str) -> None:
+    """Закрыть файл лога задачи: на Windows открытый файл нельзя удалить."""
+    logger = logging.getLogger(f"videonotes.job.{job_id}")
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+        handler.close()
+
+
 def _job_logger(job_id: str) -> logging.Logger:
     job = JOBS[job_id]
 
@@ -321,7 +344,7 @@ def _job_logger(job_id: str) -> logging.Logger:
     logger = logging.getLogger(f"videonotes.job.{job_id}")
     logger.setLevel(logging.INFO)
     logger.propagate = False  # свой stdout-хендлер есть — без дублей в docker logs
-    logger.handlers.clear()
+    _close_job_logger(job_id)
     fmt = logging.Formatter("%(asctime)s %(levelname)-7s %(message)s", datefmt="%H:%M:%S")
     sh = logging.StreamHandler(sys.stdout)
     sh.setFormatter(fmt)
@@ -333,33 +356,78 @@ def _job_logger(job_id: str) -> logging.Logger:
     return logger
 
 
+def _download_mts(job: dict, jlog: logging.Logger) -> None:
+    """Ссылка МТС Линк -> MP4 в runtime/tmp/uploads/<id>/; дальше задача идёт как загруженное видео."""
+    from mts_link import download_recording
+    job["stage"] = "Скачивание записи МТС Линк..."
+    session_id = job.pop("session_id", None)  # нужен только для запроса данных записи
+    video = download_recording(job.pop("source_url"), UPLOAD_DIR / job["id"], session_id=session_id,
+                               log=jlog, on_title=lambda title: job.update(name=title))
+    job["path"] = job["video"] = str(video)
+    _save_jobs()
+
+
+def _keep_video_with_results(job: dict, jlog: logging.Logger) -> None:
+    """MP4 записи кладём рядом с результатом: output/<имя>/запись.mp4."""
+    src, dest = Path(job["video"]), Path(job["out"]).parent / "запись.mp4"
+    if src != dest:
+        try:
+            shutil.move(str(src), str(dest))
+        except OSError as e:
+            jlog.warning("Видео записи осталось в %s: не удалось перенести (%s)", src, e)
+            return
+        job["path"] = job["video"] = str(dest)
+        jlog.info("Видео записи: %s", dest)
+    shutil.rmtree(UPLOAD_DIR / job["id"], ignore_errors=True)
+
+
+def _run_job(job_id: str) -> None:
+    job = JOBS[job_id]
+    jlog = _job_logger(job_id)
+    job["status"] = "running"
+    job["started"] = _now()
+    try:
+        if job.get("source") == "mts":
+            _download_mts(job, jlog)
+        mode = job.get("mode", "full")
+        if mode == "video":
+            job["stage"] = "Сохранение видео..."
+            job["out"] = job["video"] = str(save_video(Path(job["path"]), _job_config(job), jlog))
+            job["path"] = job["out"]
+        elif mode == "audio":
+            job["stage"] = "Извлечение аудиодорожки..."
+            job["out"] = str(extract_audio_track(Path(job["path"]), _job_config(job), jlog))
+        elif mode == "transcript":
+            job["stage"] = "Загрузка модели распознавания..."
+            job["out"] = str(transcribe_video(Path(job["path"]), _job_config(job), jlog))
+        else:
+            job["stage"] = "Загрузка моделей..."
+            job["out"] = str(process_video(Path(job["path"]), _job_config(job), jlog))
+        if job.get("source") == "mts":
+            _keep_video_with_results(job, jlog)
+        job["status"] = "done"
+        job["stage"] = "Готово"
+    except Exception as e:  # noqa: BLE001
+        job["status"] = "error"
+        job["error"] = str(e)
+        job["stage"] = f"Ошибка: {str(e)[:120]}"
+        jlog.exception("Job %s failed: %s", job_id, e)
+    finally:
+        # ссылка (в публичной — токен) и sessionId нужны были только для скачивания
+        job.pop("session_id", None)
+        job.pop("source_url", None)
+        _close_job_logger(job_id)
+    job["finished"] = _now()
+    _save_jobs()
+
+
 def worker() -> None:
     while True:
         job_id = Q.get()
-        job = JOBS[job_id]
-        jlog = _job_logger(job_id)
-        job["status"] = "running"
-        job["started"] = _now()
         try:
-            if job.get("mode", "full") == "audio":
-                job["stage"] = "Извлечение аудиодорожки..."
-                job["out"] = str(extract_audio_track(Path(job["path"]), _job_config(job), jlog))
-            elif job.get("mode") == "transcript":
-                job["stage"] = "Загрузка модели распознавания..."
-                job["out"] = str(transcribe_video(Path(job["path"]), _job_config(job), jlog))
-            else:
-                job["stage"] = "Загрузка моделей..."
-                job["out"] = str(process_video(Path(job["path"]), _job_config(job), jlog))
-            job["status"] = "done"
-            job["stage"] = "Готово"
-        except Exception as e:  # noqa: BLE001
-            job["status"] = "error"
-            job["error"] = str(e)
-            job["stage"] = f"Ошибка: {str(e)[:120]}"
-            jlog.exception("Job %s failed: %s", job_id, e)
-        job["finished"] = _now()
-        _save_jobs()
-        Q.task_done()
+            _run_job(job_id)
+        finally:
+            Q.task_done()
 
 
 threading.Thread(target=worker, daemon=True).start()
@@ -446,6 +514,7 @@ def save_models(payload: dict) -> dict:
 
 
 JOB_MODES = {"full", "transcript", "audio"}
+LINK_MODES = JOB_MODES | {"video"}  # «Только видео» имеет смысл только для ссылок
 
 
 @app.post("/api/upload")
@@ -453,6 +522,8 @@ async def upload(file: UploadFile = File(...), mode: str = Form("full")) -> dict
     name = file.filename or "video.mp4"
     if Path(name).suffix.lower() not in VIDEO_EXTS:
         raise HTTPException(400, f"Не видео: {name} (допустимо: {', '.join(sorted(VIDEO_EXTS))})")
+    if mode == "video":
+        raise HTTPException(400, "Режим «Только видео» работает только со ссылками МТС Линк")
     if mode not in JOB_MODES:
         raise HTTPException(400, "Неизвестный режим обработки")
     job_id = uuid.uuid4().hex[:8]
@@ -485,7 +556,45 @@ async def upload(file: UploadFile = File(...), mode: str = Form("full")) -> dict
         }
     _save_jobs()
     log.info("Загружено %s (%.1f МБ, режим %s) -> job %s; ожидает ручного запуска", name, dest.stat().st_size / 1e6, mode, job_id)
-    return JOBS[job_id]
+    return _public(JOBS[job_id])
+
+
+@app.post("/api/mts-link")
+def add_mts_link(payload: dict) -> dict:
+    """Задача из ссылки на запись МТС Линк. Скачивание и склейка начнутся после «Запустить»."""
+    from mts_link import clean_session_id, parse_url
+    url = str(payload.get("url") or "").strip()
+    mode = str(payload.get("mode") or "full")
+    if mode not in LINK_MODES:
+        raise HTTPException(400, "Неизвестный режим обработки")
+    try:
+        link = parse_url(url)
+        session_id = clean_session_id(str(payload.get("session_id") or ""))
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    job_id = uuid.uuid4().hex[:8]
+    with LOCK:
+        JOBS[job_id] = {
+            "id": job_id,
+            "name": f"МТС Линк · запись {link.record_id or link.event_session}",
+            "source": "mts",
+            "source_url": url,
+            "path": None,
+            "mode": mode,
+            "status": "uploaded",
+            "stage": "Готово к запуску",
+            "created": _now(),
+            "started": None,
+            "finished": None,
+            "out": None,
+            "error": None,
+        }
+        if session_id:
+            JOBS[job_id]["session_id"] = session_id
+    _save_jobs()
+    log.info("Ссылка МТС Линк (сессия %s, режим %s%s) -> job %s; ожидает ручного запуска",
+             link.event_session, mode, ", с sessionId" if session_id else "", job_id)
+    return _public(JOBS[job_id])
 
 
 @app.post("/api/jobs/{job_id}/start")
@@ -511,7 +620,7 @@ def start_job(job_id: str) -> dict:
         Q.put(job_id)
         _save_jobs()
     log.info("Ручной запуск %s -> job %s", job["name"], job_id)
-    return job
+    return _public(job)
 
 
 @app.delete("/api/jobs/{job_id}")
@@ -525,8 +634,11 @@ def delete_job(job_id: str) -> dict:
             raise HTTPException(409, "Нельзя удалить задачу во время обработки")
         del JOBS[job_id]
         _save_jobs()
-    if job["status"] == "uploaded":
+    if job["status"] == "uploaded" and job.get("path"):
         Path(job["path"]).unlink(missing_ok=True)
+    if job.get("source") == "mts" and job["status"] in {"uploaded", "error"}:
+        shutil.rmtree(UPLOAD_DIR / job_id, ignore_errors=True)  # недоделанный MP4 записи
+    _close_job_logger(job_id)
     (ROOT / "runtime" / "logs" / f"job_{job_id}.log").unlink(missing_ok=True)
     return {"ok": True}
 
@@ -534,10 +646,7 @@ def delete_job(job_id: str) -> dict:
 @app.get("/api/jobs")
 def jobs() -> list[dict]:
     with LOCK:
-        items = [
-            {k: v for k, v in j.items() if k not in ("path", "source_url")}
-            for j in sorted(JOBS.values(), key=lambda x: x["created"], reverse=True)
-        ]
+        items = [_public(j) for j in sorted(JOBS.values(), key=lambda x: x["created"], reverse=True)]
     return items
 
 
@@ -566,10 +675,24 @@ def job_download(job_id: str) -> FileResponse:
         )
     if job.get("mode", "full") == "audio":
         return FileResponse(dest, media_type="audio/wav", filename="audio.wav")
+    if job.get("mode") == "video":
+        return FileResponse(dest, media_type="video/mp4", filename=f"{dest.parent.name}.mp4")
     if job.get("mode") == "transcript":
         # имя файла = имя видео, чтобы несколько скачанных пар не назывались одинаково
         return FileResponse(dest, media_type="text/markdown", filename=f"{dest.parent.name}.md")
     return FileResponse(dest, media_type="text/markdown", filename="конспект.md")
+
+
+@app.get("/api/jobs/{job_id}/video")
+def job_video(job_id: str) -> FileResponse:
+    """MP4 записи МТС Линк: доступен и после ошибки обработки, если запись успела скачаться."""
+    job = JOBS.get(job_id)
+    if not job:
+        raise HTTPException(404, f"Нет такой задачи: {job_id}")
+    video = job.get("video")
+    if not video or not Path(video).is_file():
+        raise HTTPException(404, "Видео этой задачи нет на диске")
+    return FileResponse(video, media_type="video/mp4", filename=f"{sanitize(job.get('name') or 'запись')}.mp4")
 
 
 def run(port: int = 8090, host: str = "0.0.0.0") -> None:
