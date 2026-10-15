@@ -7,7 +7,7 @@ echo.
 
 where python >nul 2>nul
 if errorlevel 1 (
-  echo [ОШИБКА] Python не найден. Установи Python 3.13+ с python.org (галочка "Add to PATH") и повтори.
+  echo [ОШИБКА] Python не найден. Установи Python 3.13+ с python.org ^(галочка "Add to PATH"^) и повтори.
   pause
   exit /b 1
 )
@@ -20,7 +20,7 @@ echo [2/5] Зависимости (первый раз ~2.5 ГБ: torch CUDA, gi
 echo     PyTorch CUDA (cu130)...
 call venv\Scripts\pip install torch==2.14.0 torchaudio==2.11.0 --extra-index-url https://download.pytorch.org/whl/cu130
 if errorlevel 1 (
-  echo [ОШИБКА] torch CUDA (cu130) не встал.
+  echo [ОШИБКА] torch CUDA ^(cu130^) не встал.
   echo Если старый драйвер GPU, повтори вручную с cu126:
   echo   venv\Scripts\pip install torch==2.14.0 torchaudio==2.11.0 --extra-index-url https://download.pytorch.org/whl/cu126
   pause
@@ -40,7 +40,7 @@ if errorlevel 1 (
   echo [3/5] Установка ffmpeg...
   winget install --id Gyan.FFmpeg -e --accept-source-agreements --accept-package-agreements
   if errorlevel 1 (
-    echo ffmpeg не встал через winget. Скачай с https://www.gyan.dev/ffmpeg/builds/ (ffmpeg-release-essentials.zip),
+    echo ffmpeg не встал через winget. Скачай с https://www.gyan.dev/ffmpeg/builds/ ^(ffmpeg-release-essentials.zip^),
     echo распакуй и добавь папку bin\ в PATH. Затем повтори setup.bat.
     pause
     exit /b 1
@@ -63,9 +63,12 @@ if errorlevel 1 (
 )
 
 echo [5/5] Модели не скачиваются при установке.
-echo Запусти web-интерфейс и выбери GigaAM и Qwen в разделе «Настройки моделей».
+echo Запусти scripts\windows\web.bat и выбери модели в разделе «Настройки моделей»:
+echo GigaAM нужна для всех режимов, Qwen VL и Qwen только для полной обработки.
 echo.
 echo Готово! Дальше:
-echo   - перетащи видео на scripts\windows\process.bat, ИЛИ
+echo   - запусти scripts\windows\web.bat: откроется веб-интерфейс со всеми режимами, ИЛИ
+echo   - перетащи видео на scripts\windows\transcribe.bat: только транскрипция, без Ollama, ИЛИ
+echo   - перетащи видео на scripts\windows\process.bat: полная обработка, ИЛИ
 echo   - запусти scripts\windows\watch.bat и кидай видео в папку runtime\in\
 pause
