@@ -77,7 +77,7 @@ def process_video(video: Path, cfg: dict, log) -> Path:
 
     import report as R
     R.write_transcript(out_dir / "транскрипция.md", sanitize(video.stem), duration,
-                       lines, cfg["asr"].get("model", "v3_e2e_rnnt"))
+                       lines, cfg["asr"].get("model", "v3_e2e_rnnt"), source_name=video.name)
     concept = R.write_concept(out_dir, sanitize(video.stem), video.name, duration,
                               concept_body, frames, cfg["llm"].get("vlm_model", ""),
                               cfg["asr"].get("model", "v3_e2e_rnnt"))
@@ -113,7 +113,7 @@ def transcribe_video(video: Path, cfg: dict, log) -> Path:
     out_dir.mkdir(parents=True)
     out = out_dir / "транскрипция.md"
     R.write_transcript(out, sanitize(video.stem), duration, paragraphs,
-                       cfg["asr"].get("model", "v3_e2e_rnnt"))
+                       cfg["asr"].get("model", "v3_e2e_rnnt"), source_name=video.name)
     log.info("Абзацев: %d", len(paragraphs))
     log.info("Готово за %.1f мин: %s", (time.time() - t_start) / 60, out)
     return out
