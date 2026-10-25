@@ -16,7 +16,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from common import ROOT, VIDEO_EXTS, fmt_ts, is_video, load_config, sanitize, setup_logging
+from common import (ROOT, VIDEO_EXTS, Cancelled, check_cancel, fmt_ts, is_video, load_config,
+                    sanitize, setup_logging)
 
 
 def process_video(video: Path, cfg: dict, log) -> Path:
@@ -32,7 +33,13 @@ def process_video(video: Path, cfg: dict, log) -> Path:
     log.info("Длительность: %s", fmt_ts(duration))
 
     work = _work_dir(video)
+    try:
+        return _process_in(video, duration, work, cfg, log, t_start)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)  # WAV, чанки и кадры (кадры уже скопированы в результат)
 
+
+def _process_in(video: Path, duration: float, work: Path, cfg: dict, log, t_start: float) -> Path:
     # --- 1–3. Аудио, VAD, ASR ---
     segs = _speech_to_text(video, cfg, log, work, total_steps=5)
     lines = [(cs, text) for cs, _ce, text in segs]
@@ -51,6 +58,7 @@ def process_video(video: Path, cfg: dict, log) -> Path:
     llm = make_llm(cfg["llm"], log)
     frames: list[dict] = []
     for i, t in enumerate(plan, 1):
+        check_cancel()
         jpg = frames_dir / f"frame_{i:03d}.jpg"
         if not F.extract_frame(video, t, jpg, cfg["frames"].get("width", 1280)):
             continue
@@ -165,6 +173,7 @@ def _speech_to_text(video: Path, cfg: dict, log, work: Path,
     segs: list[tuple[float, float, str]] = []
     try:
         for i, (cs, ce) in enumerate(chunks, 1):
+            check_cancel()
             chunk_wav = work / f"chunk_{i:04d}.wav"
             A.cut_wav(wav, cs, ce, chunk_wav)
             res = asr.transcribe_chunk(chunk_wav, cs)
@@ -189,7 +198,11 @@ def extract_audio_track(video: Path, cfg: dict, log) -> Path:
     out_dir.mkdir(parents=True)
     audio_path = out_dir / "audio.wav"
     log.info("[1/1] Извлечение аудиодорожки (%s)...", fmt_ts(duration))
-    A.extract_audio(video, audio_path)
+    try:
+        A.extract_audio(video, audio_path)
+    except Cancelled:
+        shutil.rmtree(out_dir, ignore_errors=True)  # недописанный WAV не нужен
+        raise
     log.info("Аудиодорожка сохранена: %s", audio_path)
     return audio_path
 

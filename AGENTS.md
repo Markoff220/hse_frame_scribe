@@ -4,7 +4,7 @@
 
 ## Точки входа
 - CLI: `python app/pipeline/main.py process <video>`, `transcribe <video>`, `extract-audio <video>`, `download-mts <url> [--session-id ID]`, `watch` и `selftest`. Логи CLI: `runtime/logs/run_*.log`.
-- Web: `python app/web.py [port]` (8090 по умолчанию). Загрузка и `POST /api/mts-link` создают задачу `uploaded`; запуск только через отдельный `POST /api/jobs/{id}/start`. Очередь обслуживает один поток (`_run_job`).
+- Web: `python app/web.py [port]` (8090 по умолчанию). Загрузка и `POST /api/mts-link` создают задачу `uploaded`; запуск только через отдельный `POST /api/jobs/{id}/start`. Очередь обслуживает один поток (`_run_job`). `POST /api/jobs/{id}/cancel` ставит флаг из `common.cancel_scope`: долгие места зовут `common.check_cancel()`, а ffmpeg запускается через `common.run()`, который убивает процесс; остановленная задача возвращается в `uploaded` (у ссылок сохраняются URL и вход в памяти, куски докачиваются).
 - Ссылки МТС Линк: `app/pipeline/mts_link.py` скачивает куски в `runtime/tmp/mts_link/<id>/` (докачка, удаляется после склейки) и собирает MP4 в `runtime/tmp/uploads/<job_id>/`; затем работает выбранный режим (`full`/`transcript`/`audio`, для ссылок ещё `video`), а MP4 переносится в папку результата как `запись.mp4`. Вход (cookie `access` для значений на `eyJ`, иначе старый `sessionId`) живёт только в памяти задачи до скачивания: не отдаётся в API (`_public`), не пишется в `jobs.json` и логи.
 - `app/pipeline/main.py` связывает все стадии; `app/web.py` вызывает его `process_video()`. UI находится в `app/web/index.html`.
 

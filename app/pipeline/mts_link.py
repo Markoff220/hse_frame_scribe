@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import urlsplit
 
-from common import ROOT, sanitize
+from common import ROOT, Cancelled, check_cancel, sanitize
 
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/140.0 Safari/537.36")
@@ -206,6 +206,7 @@ def _download(url: str, directory: Path, label: str, log: logging.Logger, retrie
                 next_pct = (done * 100 // total // 20 + 1) * 20 if total else 101
                 with part.open("ab" if append else "wb") as f:
                     for chunk in r.iter_content(1 << 16):
+                        check_cancel()  # недокачанный .part останется: докачается при повторном запуске
                         f.write(chunk)
                         done += len(chunk)
                         if total and done * 100 >= next_pct * total and next_pct < 100:
@@ -468,13 +469,30 @@ def _run_ffmpeg(plan: MergePlan, directory: Path, output: Path, log: logging.Log
         proc = subprocess.Popen(args, cwd=directory, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                 stderr=err, text=True, encoding="utf-8", errors="replace")
         next_pct = 10
-        for line in proc.stdout:
-            key, _, value = line.strip().partition("=")
-            if key in ("out_time_us", "out_time_ms") and value.isdigit():  # out_time_ms тоже в мкс
-                pct = int(value) / 1e6 / plan.duration * 100
-                if pct >= next_pct and next_pct < 100:
-                    log.info("Сборка MP4: %d%%", next_pct)
-                    next_pct = (int(pct) // 10 + 1) * 10
+        try:
+            for line in proc.stdout:
+                check_cancel()
+                key, _, value = line.strip().partition("=")
+                if key in ("out_time_us", "out_time_ms") and value.isdigit():  # out_time_ms тоже в мкс
+                    pct = int(value) / 1e6 / plan.duration * 100
+                    # последний кадр кончается на долю секунды раньше длительности: 99% = всё закодировано
+                    if pct >= 99 and next_pct <= 100:
+                        # дальше ffmpeg переписывает файл целиком ради +faststart, прогресса в это
+                        # время нет; без этой строки казалось, что сборка зависла на 90%
+                        log.info("Сборка MP4: %d%%, дописываю файл...", 100)
+                        next_pct = 110
+                    elif pct >= next_pct:
+                        # отчёт приходит раз в полсекунды: на быстром ПК между ними бывает больше 10%
+                        log.info("Сборка MP4: %d%%", int(pct) // 10 * 10)
+                        next_pct = (int(pct) // 10 + 1) * 10
+                elif key == "progress" and value == "end" and next_pct <= 100:
+                    log.info("Сборка MP4: %d%%", 100)  # ffmpeg закончил раньше, чем мы увидели 99%
+                    next_pct = 110
+            check_cancel()
+        except Cancelled:
+            proc.kill()
+            proc.wait()
+            raise
         code = proc.wait()
         if code:
             err.seek(0)
@@ -495,10 +513,13 @@ def build(directory: Path, record: dict, output: Path, log: logging.Logger,
 
     info = {}
     for i, url in enumerate(urls, 1):
+        check_cancel()
         label = f"{i}/{len(urls)}"
         log.info("Скачивание файла %s...", label)
         try:
             path = download(url, directory, label, log)
+        except Cancelled:
+            raise
         except PieceGone as e:
             log.warning("Файл %s недоступен на сервере, пропускаю: %s", label, e)
             continue

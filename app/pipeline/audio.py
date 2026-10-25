@@ -6,6 +6,8 @@ import numpy as np
 import soundfile as sf
 import torch
 
+from common import check_cancel, run
+
 
 def ffprobe_duration(path: Path) -> float:
     out = subprocess.run(
@@ -17,11 +19,8 @@ def ffprobe_duration(path: Path) -> float:
 
 def extract_audio(video: Path, out_wav: Path) -> None:
     """Видео -> 16 kHz mono WAV (формат GigaAM)."""
-    subprocess.run(
-        ["ffmpeg", "-y", "-v", "error", "-i", str(video),
-         "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(out_wav)],
-        check=True,
-    )
+    run(["ffmpeg", "-y", "-v", "error", "-i", str(video),
+         "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(out_wav)])
 
 
 def vad_segments(wav: Path, threshold: float = 0.5,
@@ -38,6 +37,7 @@ def vad_segments(wav: Path, threshold: float = 0.5,
         min_speech_duration_ms=min_speech_ms,
         min_silence_duration_ms=min_silence_ms,
         speech_pad_ms=100, return_seconds=True,
+        progress_tracking_callback=lambda _pct: check_cancel(),  # VAD 3-часовой пары — минута
     )
     return [(float(s["start"]), float(s["end"])) for s in stamps]
 
@@ -84,8 +84,5 @@ def merge_split_segments(segments: list[tuple[float, float]],
 
 
 def cut_wav(src_wav: Path, start: float, end: float, dst: Path) -> None:
-    subprocess.run(
-        ["ffmpeg", "-y", "-v", "error", "-ss", f"{start:.3f}", "-t", f"{end - start:.3f}",
-         "-i", str(src_wav), "-c:a", "pcm_s16le", str(dst)],
-        check=True,
-    )
+    run(["ffmpeg", "-y", "-v", "error", "-ss", f"{start:.3f}", "-t", f"{end - start:.3f}",
+         "-i", str(src_wav), "-c:a", "pcm_s16le", str(dst)])

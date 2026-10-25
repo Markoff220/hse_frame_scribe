@@ -3,6 +3,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from common import run
+
 SCENE_RE = re.compile(r"pts_time:(\d+\.?\d*)")
 
 
@@ -13,7 +15,7 @@ def detect_scenes(video: Path, threshold: float = 0.3) -> list[float]:
         "-vf", f"select='gt(scene\\,{threshold})',showinfo",
         "-f", "null", "-",
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = run(cmd, check=False, capture_output=True, text=True, encoding="utf-8", errors="replace")
     times = [float(m) for m in SCENE_RE.findall(proc.stderr)]
     dedup: list[float] = []
     for t in times:
@@ -43,11 +45,8 @@ def plan_frames(duration: float, scene_times: list[float],
 
 def extract_frame(video: Path, t: float, out: Path, width: int = 1280) -> bool:
     try:
-        subprocess.run(
-            ["ffmpeg", "-y", "-v", "error", "-ss", f"{t:.2f}", "-i", str(video),
-             "-frames:v", "1", "-vf", f"scale={width}:-2", "-q:v", "3", str(out)],
-            check=True,
-        )
+        run(["ffmpeg", "-y", "-v", "error", "-ss", f"{t:.2f}", "-i", str(video),
+             "-frames:v", "1", "-vf", f"scale={width}:-2", "-q:v", "3", str(out)])
     except subprocess.CalledProcessError:
         return False
     return out.exists() and out.stat().st_size > 1000

@@ -3,7 +3,10 @@ import json
 import logging
 import os
 import re
+import subprocess
 import sys
+import threading
+from contextlib import contextmanager
 from pathlib import Path
 
 def _find_root() -> Path:
@@ -70,3 +73,60 @@ def sanitize(name: str) -> str:
 
 def is_video(path: Path) -> bool:
     return path.suffix.lower() in VIDEO_EXTS and path.is_file()
+
+
+# --- Остановка обработки -------------------------------------------------------
+# Веб-интерфейс ставит флаг (threading.Event) на задачу, а пайплайн проверяет его
+# в долгих местах: между кусками скачивания, чанками ASR, кадрами, запросами к LLM,
+# и убивает запущенный ffmpeg. Флаг живёт в потоке, который ведёт задачу.
+
+class Cancelled(Exception):
+    """Обработку остановил пользователь."""
+
+    def __init__(self, message: str = "Обработка остановлена"):
+        super().__init__(message)
+
+
+_cancel_state = threading.local()
+
+
+@contextmanager
+def cancel_scope(event: threading.Event | None):
+    """Внутри блока check_cancel() и run() слушают этот флаг."""
+    prev = getattr(_cancel_state, "event", None)
+    _cancel_state.event = event
+    try:
+        yield
+    finally:
+        _cancel_state.event = prev
+
+
+def cancel_requested() -> bool:
+    event = getattr(_cancel_state, "event", None)
+    return bool(event is not None and event.is_set())
+
+
+def check_cancel() -> None:
+    if cancel_requested():
+        raise Cancelled()
+
+
+def run(args: list, *, check: bool = True, capture_output: bool = False,
+        poll: float = 0.5, **kwargs) -> subprocess.CompletedProcess:
+    """subprocess.run, который убивает процесс, если нажали «Остановить»."""
+    if capture_output:
+        kwargs["stdout"] = kwargs["stderr"] = subprocess.PIPE
+    kwargs.setdefault("stdin", subprocess.DEVNULL)
+    proc = subprocess.Popen(args, **kwargs)
+    while True:
+        try:
+            out, err = proc.communicate(timeout=poll)
+            break
+        except subprocess.TimeoutExpired:
+            if cancel_requested():
+                proc.kill()
+                proc.communicate()
+                raise Cancelled() from None
+    if check and proc.returncode:
+        raise subprocess.CalledProcessError(proc.returncode, args, out, err)
+    return subprocess.CompletedProcess(args, proc.returncode, out, err)

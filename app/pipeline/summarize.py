@@ -1,5 +1,5 @@
 """Сводка: map-reduce по транскрипту + описания кадров -> конспект."""
-from common import fmt_ts
+from common import check_cancel, fmt_ts
 
 MAP_PROMPT = """Ты — ассистент по конспектированию видео. Ниже фрагмент транскрипции (таймкоды [мм:сс]) и описания кадров в эти моменты.
 
@@ -85,6 +85,7 @@ def summarize(llm, transcript_lines: list[tuple[float, str]],
             transcript=render_chunk(chunk),
             frames=render_frames_for_range(frames, t0, t1),
         )
+        check_cancel()
         log.info("  выжимка %d/%d ...", i, len(chunks))
         summaries.append(f"### Фрагмент {i} [{fmt_ts(t0)}–{fmt_ts(t1)}]\n{llm.chat(prompt)}")
     important = [f for f in frames if f.get("importance") == "высокая"]
@@ -94,5 +95,6 @@ def summarize(llm, transcript_lines: list[tuple[float, str]],
         summaries="\n\n".join(summaries),
         frames="\n".join(f"[{fmt_ts(f['t'])}] {f['desc']}" for f in important) or "(нет)",
     )
+    check_cancel()
     log.info("  финальная сборка конспекта ...")
     return llm.chat(reduce_prompt)

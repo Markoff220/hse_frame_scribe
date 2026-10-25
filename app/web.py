@@ -10,6 +10,8 @@ API:
    PUT  /api/settings/models  — применить модели
   POST /api/upload           — загрузка видео (multipart, поле "file")
   POST /api/mts-link         — задача из ссылки на запись МТС Линк
+  POST /api/jobs/{id}/start  — поставить задачу в очередь
+  POST /api/jobs/{id}/cancel — остановить задачу (в очереди или в работе)
   GET  /api/jobs             — список задач
   GET  /api/jobs/{id}/log    — лог задачи
   GET  /api/jobs/{id}/download — конспект.md / транскрипция.md / audio.wav / MP4
@@ -36,7 +38,7 @@ from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
 BASE = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE / "pipeline"))
 
-from common import ROOT, VIDEO_EXTS, load_config, sanitize, setup_logging  # noqa: E402
+from common import ROOT, VIDEO_EXTS, Cancelled, cancel_scope, load_config, sanitize, setup_logging  # noqa: E402
 from main import extract_audio_track, process_video, save_video, transcribe_video  # noqa: E402
 
 app = FastAPI(title="VideoNotes")
@@ -194,6 +196,8 @@ JOBS: dict[str, dict] = {}
 JOBS_FILE = ROOT / "runtime" / "tmp" / "jobs.json"
 Q: queue.Queue = queue.Queue()
 LOCK = threading.Lock()
+CANCEL: dict[str, threading.Event] = {}  # флаги «Остановить» для задач в работе
+STOPPED_STAGE = "Остановлено, можно запустить заново"
 
 
 # Служебные поля задачи: не отдаются в API. sessionId МТС Линк ещё и не пишется на диск.
@@ -334,11 +338,13 @@ def _job_logger(job_id: str) -> logging.Logger:
 
     class StageHandler(logging.Handler):
         def emit(self, record):
+            if job.get("cancelling"):
+                return  # «Останавливаю...» не перетираем строками лога
             message = record.getMessage()
             m = STAGE_RE.search(message)
             if m:
                 job["stage"] = message
-            elif message.startswith(("Скачивание ", "Сборка MP4")) or "аудиодорожки " in message:
+            elif message.startswith(("Скачивание ", "Сборка MP4", "MP4 записи")) or "аудиодорожки " in message:
                 job["stage"] = message.strip()
 
     logger = logging.getLogger(f"videonotes.job.{job_id}")
@@ -360,9 +366,11 @@ def _download_mts(job: dict, jlog: logging.Logger) -> None:
     """Ссылка МТС Линк -> MP4 в runtime/tmp/uploads/<id>/; дальше задача идёт как загруженное видео."""
     from mts_link import download_recording
     job["stage"] = "Скачивание записи МТС Линк..."
-    session_id = job.pop("session_id", None)  # нужен только для запроса данных записи
-    video = download_recording(job.pop("source_url"), UPLOAD_DIR / job["id"], session_id=session_id,
+    # ссылку и вход не выкидываем до конца скачивания: после «Остановить» задачу можно запустить снова
+    video = download_recording(job["source_url"], UPLOAD_DIR / job["id"], session_id=job.get("session_id"),
                                log=jlog, on_title=lambda title: job.update(name=title))
+    job.pop("session_id", None)  # нужен был только для запроса данных записи
+    job.pop("source_url", None)
     job["path"] = job["video"] = str(video)
     _save_jobs()
 
@@ -382,43 +390,73 @@ def _keep_video_with_results(job: dict, jlog: logging.Logger) -> None:
 
 
 def _run_job(job_id: str) -> None:
-    job = JOBS[job_id]
+    with LOCK:
+        job = JOBS.get(job_id)
+        if not job or job.get("status") != "queued":
+            return  # остановили, пока стояла в очереди
+        job["status"] = "running"
+        cancel = CANCEL[job_id] = threading.Event()
     jlog = _job_logger(job_id)
-    job["status"] = "running"
     job["started"] = _now()
     try:
-        if job.get("source") == "mts":
-            _download_mts(job, jlog)
-        mode = job.get("mode", "full")
-        if mode == "video":
-            job["stage"] = "Сохранение видео..."
-            job["out"] = job["video"] = str(save_video(Path(job["path"]), _job_config(job), jlog))
-            job["path"] = job["out"]
-        elif mode == "audio":
-            job["stage"] = "Извлечение аудиодорожки..."
-            job["out"] = str(extract_audio_track(Path(job["path"]), _job_config(job), jlog))
-        elif mode == "transcript":
-            job["stage"] = "Загрузка модели распознавания..."
-            job["out"] = str(transcribe_video(Path(job["path"]), _job_config(job), jlog))
-        else:
-            job["stage"] = "Загрузка моделей..."
-            job["out"] = str(process_video(Path(job["path"]), _job_config(job), jlog))
-        if job.get("source") == "mts":
-            _keep_video_with_results(job, jlog)
-        job["status"] = "done"
-        job["stage"] = "Готово"
+        with cancel_scope(cancel):
+            _run_stages(job, jlog)
+    except Cancelled:
+        jlog.info("Обработка остановлена")
+        _restore_after_stop(job)
     except Exception as e:  # noqa: BLE001
         job["status"] = "error"
         job["error"] = str(e)
         job["stage"] = f"Ошибка: {str(e)[:120]}"
         jlog.exception("Job %s failed: %s", job_id, e)
     finally:
-        # ссылка (в публичной — токен) и sessionId нужны были только для скачивания
-        job.pop("session_id", None)
-        job.pop("source_url", None)
+        with LOCK:
+            CANCEL.pop(job_id, None)
+            job.pop("cancelling", None)
+        if job["status"] != "uploaded":
+            # ссылка (в публичной — токен) и sessionId нужны были только для скачивания
+            job.pop("session_id", None)
+            job.pop("source_url", None)
         _close_job_logger(job_id)
-    job["finished"] = _now()
+    job["finished"] = _now() if job["status"] != "uploaded" else None
     _save_jobs()
+
+
+def _restore_after_stop(job: dict) -> None:
+    """После «Остановить» задача снова «Готово к запуску», если есть что запускать."""
+    video = job.get("path")
+    can_restart = (bool(video) and Path(video).is_file()) or bool(job.get("source_url"))
+    if can_restart:
+        job["status"] = "uploaded"
+        job["stage"] = STOPPED_STAGE
+        job["error"] = None
+    else:
+        job["status"] = "error"
+        job["error"] = job["stage"] = "Остановлено"
+
+
+def _run_stages(job: dict, jlog: logging.Logger) -> None:
+    """Скачивание (для ссылок) и выбранный режим. Бросает Cancelled по «Остановить»."""
+    if job.get("source") == "mts" and not (job.get("video") and Path(job["video"]).is_file()):
+        _download_mts(job, jlog)
+    mode = job.get("mode", "full")
+    if mode == "video":
+        job["stage"] = "Сохранение видео..."
+        job["out"] = job["video"] = str(save_video(Path(job["path"]), _job_config(job), jlog))
+        job["path"] = job["out"]
+    elif mode == "audio":
+        job["stage"] = "Извлечение аудиодорожки..."
+        job["out"] = str(extract_audio_track(Path(job["path"]), _job_config(job), jlog))
+    elif mode == "transcript":
+        job["stage"] = "Загрузка модели распознавания..."
+        job["out"] = str(transcribe_video(Path(job["path"]), _job_config(job), jlog))
+    else:
+        job["stage"] = "Загрузка моделей..."
+        job["out"] = str(process_video(Path(job["path"]), _job_config(job), jlog))
+    if job.get("source") == "mts":
+        _keep_video_with_results(job, jlog)
+    job["status"] = "done"
+    job["stage"] = "Готово"
 
 
 def worker() -> None:
@@ -620,6 +658,28 @@ def start_job(job_id: str) -> dict:
         Q.put(job_id)
         _save_jobs()
     log.info("Ручной запуск %s -> job %s", job["name"], job_id)
+    return _public(job)
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+def cancel_job(job_id: str) -> dict:
+    """«Остановить»: из очереди снимает сразу, в работе останавливает на ближайшей проверке
+    (обычно за секунду, запрос к Ollama дожидается конца)."""
+    with LOCK:
+        job = JOBS.get(job_id)
+        if not job:
+            raise HTTPException(404, f"Нет такой задачи: {job_id}")
+        if job["status"] == "queued":
+            job["status"] = "uploaded"  # запись в очереди воркер пропустит
+            job["stage"] = STOPPED_STAGE
+            _save_jobs()
+        elif job["status"] == "running" and job_id in CANCEL:
+            job["cancelling"] = True
+            job["stage"] = "Останавливаю..."
+            CANCEL[job_id].set()
+        else:
+            raise HTTPException(409, "Задача не выполняется")
+    log.info("Остановка задачи %s (%s)", job_id, job["name"])
     return _public(job)
 
 

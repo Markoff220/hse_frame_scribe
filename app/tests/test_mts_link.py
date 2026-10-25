@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 import web  # noqa: F401 — добавляет app/pipeline в sys.path
+import common
 import mts_link as M
 
 LOG = logging.getLogger("test.mts")
@@ -322,6 +323,8 @@ def test_build_glues_screen_and_all_mics_by_timing(synthetic, tmp_path, caplog):
     assert not out.with_name("Лекция.partial.mp4").exists()
     assert any("недоступен на сервере, пропускаю" in r.message for r in caplog.records)
     assert any(r.message.startswith("Сборка MP4: ") and "%" in r.message for r in caplog.records)
+    # последняя строка сборки — 100%: дальше ffmpeg молча переписывает файл ради faststart
+    assert [r.message for r in caplog.records if r.message.startswith("Сборка MP4: ")][-1].startswith("Сборка MP4: 100%")
 
     # картинка: чёрный до 10 с, экран с 10 до 25 (после cut — со смещением upTime=2, т.е. синий), потом чёрный
     for t, want in ((5, "black"), (11, "red"), (13, "blue"), (24, "blue"), (27, "black")):
@@ -338,6 +341,70 @@ def test_build_glues_screen_and_all_mics_by_timing(synthetic, tmp_path, caplog):
     rms, hz = _tone(out, 18.5, 27.5)
     assert rms > 0.05 and abs(hz - 880) < 10
     assert _tone(out, 28.4, 29.8)[0] < 0.01
+
+
+@pytest.mark.parametrize("times, want", [
+    ([0.5, 3, 7.2, 9.99], ["30%", "70%", "100%, дописываю файл..."]),  # запись 10 с
+    ([0.2, 10], ["100%, дописываю файл..."]),        # быстрый ПК: всё между двумя отчётами
+    ([0.2, 4], ["40%", "100%"]),                     # 99% не увидели, но ffmpeg сказал end
+])
+def test_merge_progress_always_reaches_100(tmp_path, monkeypatch, caplog, times, want):
+    lines = [f"out_time_us={int(t * 1e6)}\nprogress=continue\n" for t in times] + ["progress=end\n"]
+
+    class FakeProc:
+        stdout = iter("".join(lines).splitlines(keepends=True))
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(M.subprocess, "Popen", lambda *a, **k: FakeProc())
+    plan = M.MergePlan(duration=10.0)
+    with caplog.at_level(logging.INFO, logger=LOG.name):
+        M._run_ffmpeg(plan, tmp_path, tmp_path / "out.mp4", LOG)
+    assert [r.message.removeprefix("Сборка MP4: ") for r in caplog.records] == want
+
+
+def test_build_cancel_kills_ffmpeg_and_leaves_no_file(synthetic, tmp_path):
+    record, fake_download = synthetic
+    stop = threading.Event()
+
+    class StopOnMerge(logging.Handler):
+        def emit(self, rec):
+            if rec.getMessage()[len("Сборка MP4: "):][:1].isdigit():  # первый же процент сборки
+                stop.set()
+
+    log = logging.getLogger("test.mts.cancel")
+    log.setLevel(logging.INFO)
+    log.addHandler(StopOnMerge())
+    out = tmp_path / "out" / "Лекция.mp4"
+    with common.cancel_scope(stop), pytest.raises(common.Cancelled):
+        M.build(tmp_path, record, out, log, download=fake_download)
+    assert not out.exists() and not out.with_name("Лекция.partial.mp4").exists()
+
+
+def test_download_cancel_keeps_part_for_resume(tmp_path):
+    body = b"x" * (1 << 20)
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    stop = threading.Event()
+    stop.set()
+    try:
+        with common.cancel_scope(stop), pytest.raises(common.Cancelled):
+            M._download(f"http://127.0.0.1:{server.server_port}/piece.mp4", tmp_path, "1/1", LOG)
+    finally:
+        server.shutdown()
+    assert not any(p.suffix == ".mp4" for p in tmp_path.iterdir())  # целого куска нет, .part докачается
 
 
 def test_build_stops_instead_of_silently_dropping_a_piece(synthetic, tmp_path):
