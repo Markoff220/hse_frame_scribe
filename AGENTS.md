@@ -13,6 +13,7 @@
 - Локально используется `config/config.json`; контейнер устанавливает `VIDEONOTES_CONFIG=/app/config/docker.json`. `OLLAMA_URL` и `ASR_DEVICE` переопределяют значения конфигурации, `VIDEONOTES_HOST` задаёт адрес `app/web.py` (по умолчанию `0.0.0.0`, его ждёт Docker). Выбор моделей из веб-интерфейса сохраняется в `runtime/tmp/model_settings.json`.
 - Модули из `app/pipeline/` импортируются как топовые (`import common`, `import frames`): точки входа вручную добавляют этот каталог в `sys.path`. Не переводите их на `pipeline.*` без согласованной переработки запуска и Dockerfile.
 - `runtime/tmp/` содержит uploads и персистентное состояние очереди `jobs.json`; при рестарте задачи `running` становятся `error`. Веса GigaAM: `runtime/models/gigaam`; логи web/job: `runtime/logs/`.
+- Модели с диска не отдавайте нативным загрузчикам по пути: `torch.jit.load` и SentencePiece на Windows не открывают пути с кириллицей. Читайте байты Python'ом (`audio.load_vad_model`, `asr._tokenizer_from_bytes`).
 - ASR получает VAD-чанки максимум 22 с (`asr.max_segment_seconds`), поскольку GigaAM ограничивает транскрипцию 25 с.
 
 ## Запуск и проверка

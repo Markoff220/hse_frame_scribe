@@ -30,8 +30,8 @@ def vad_segments(wav: Path, threshold: float = 0.5,
     data, sr = sf.read(str(wav), dtype="float32")
     if sr != 16000:
         raise RuntimeError(f"Ожидался 16 kHz, получен {sr}")
-    from silero_vad import get_speech_timestamps, load_silero_vad
-    model = load_silero_vad()
+    from silero_vad import get_speech_timestamps
+    model = load_vad_model()
     stamps = get_speech_timestamps(
         torch.from_numpy(data), model,
         sampling_rate=16000, threshold=threshold,
@@ -40,6 +40,23 @@ def vad_segments(wav: Path, threshold: float = 0.5,
         speech_pad_ms=100, return_seconds=True,
     )
     return [(float(s["start"]), float(s["end"])) for s in stamps]
+
+
+def load_vad_model():
+    """Silero VAD, загруженный из байтов, а не по пути.
+
+    silero_vad.load_silero_vad() отдаёт путь в torch.jit.load, а тот на Windows
+    открывает файл через C-шный fopen и не находит его, если в пути есть
+    кириллица (D:\\Учеба\\..., C:\\Users\\Иван\\...). Байты читает Python,
+    ему кириллица не мешает.
+    """
+    import io
+    from importlib import resources
+
+    data = resources.files("silero_vad.data").joinpath("silero_vad.jit").read_bytes()
+    model = torch.jit.load(io.BytesIO(data), map_location="cpu")
+    model.eval()
+    return model
 
 
 def merge_split_segments(segments: list[tuple[float, float]],
