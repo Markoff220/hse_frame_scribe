@@ -4,6 +4,7 @@
 Лимит transcribe() — 25 с, поэтому на вход идут VAD-чанки.
 """
 import gc
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -32,6 +33,30 @@ def select_device(device: str = "auto") -> str:
     return "cpu"
 
 
+@contextmanager
+def _tokenizer_from_bytes():
+    """GigaAM грузит токенизатор SentencePiece по пути, а тот на Windows не открывает
+    файл, если в пути есть кириллица (ошибка NOT_FOUND). На время загрузки модели
+    подменяем load: файл читает Python, SentencePiece получает готовые байты."""
+    import sentencepiece
+
+    cls = sentencepiece.SentencePieceProcessor
+    originals = {name: getattr(cls, name) for name in ("load", "Load") if hasattr(cls, name)}
+
+    def load(self, model_file=None, model_proto=None):
+        if model_file is not None and model_proto is None:
+            return self.LoadFromSerializedProto(Path(model_file).read_bytes())
+        return originals["Load"](self, model_file=model_file, model_proto=model_proto)
+
+    for name in originals:
+        setattr(cls, name, load)
+    try:
+        yield
+    finally:
+        for name, fn in originals.items():
+            setattr(cls, name, fn)
+
+
 class GigaAMASR:
     def __init__(self, cfg: dict, log):
         self.cfg = cfg
@@ -51,11 +76,12 @@ class GigaAMASR:
                       self.cfg.get("model", "v3_e2e_rnnt"))
         kwargs = {}
         kwargs["device"] = select_device(self.cfg.get("device", "auto"))
-        self.model = gigaam.load_model(
-            self.cfg.get("model", "v3_e2e_rnnt"),
-            download_root=str(model_dir),
-            **kwargs,
-        )
+        with _tokenizer_from_bytes():
+            self.model = gigaam.load_model(
+                self.cfg.get("model", "v3_e2e_rnnt"),
+                download_root=str(model_dir),
+                **kwargs,
+            )
         dev = next(self.model.parameters()).device
         self.log.info("Модель загружена, device=%s", dev)
 

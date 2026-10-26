@@ -6,6 +6,8 @@ import numpy as np
 import soundfile as sf
 import torch
 
+from common import check_cancel, run
+
 
 def ffprobe_duration(path: Path) -> float:
     out = subprocess.run(
@@ -17,11 +19,8 @@ def ffprobe_duration(path: Path) -> float:
 
 def extract_audio(video: Path, out_wav: Path) -> None:
     """Видео -> 16 kHz mono WAV (формат GigaAM)."""
-    subprocess.run(
-        ["ffmpeg", "-y", "-v", "error", "-i", str(video),
-         "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(out_wav)],
-        check=True,
-    )
+    run(["ffmpeg", "-y", "-v", "error", "-i", str(video),
+         "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(out_wav)])
 
 
 def vad_segments(wav: Path, threshold: float = 0.5,
@@ -30,16 +29,34 @@ def vad_segments(wav: Path, threshold: float = 0.5,
     data, sr = sf.read(str(wav), dtype="float32")
     if sr != 16000:
         raise RuntimeError(f"Ожидался 16 kHz, получен {sr}")
-    from silero_vad import get_speech_timestamps, load_silero_vad
-    model = load_silero_vad()
+    from silero_vad import get_speech_timestamps
+    model = load_vad_model()
     stamps = get_speech_timestamps(
         torch.from_numpy(data), model,
         sampling_rate=16000, threshold=threshold,
         min_speech_duration_ms=min_speech_ms,
         min_silence_duration_ms=min_silence_ms,
         speech_pad_ms=100, return_seconds=True,
+        progress_tracking_callback=lambda _pct: check_cancel(),  # VAD 3-часовой пары — минута
     )
     return [(float(s["start"]), float(s["end"])) for s in stamps]
+
+
+def load_vad_model():
+    """Silero VAD, загруженный из байтов, а не по пути.
+
+    silero_vad.load_silero_vad() отдаёт путь в torch.jit.load, а тот на Windows
+    открывает файл через C-шный fopen и не находит его, если в пути есть
+    кириллица (D:\\Учеба\\..., C:\\Users\\Иван\\...). Байты читает Python,
+    ему кириллица не мешает.
+    """
+    import io
+    from importlib import resources
+
+    data = resources.files("silero_vad.data").joinpath("silero_vad.jit").read_bytes()
+    model = torch.jit.load(io.BytesIO(data), map_location="cpu")
+    model.eval()
+    return model
 
 
 def merge_split_segments(segments: list[tuple[float, float]],
@@ -67,8 +84,5 @@ def merge_split_segments(segments: list[tuple[float, float]],
 
 
 def cut_wav(src_wav: Path, start: float, end: float, dst: Path) -> None:
-    subprocess.run(
-        ["ffmpeg", "-y", "-v", "error", "-ss", f"{start:.3f}", "-t", f"{end - start:.3f}",
-         "-i", str(src_wav), "-c:a", "pcm_s16le", str(dst)],
-        check=True,
-    )
+    run(["ffmpeg", "-y", "-v", "error", "-ss", f"{start:.3f}", "-t", f"{end - start:.3f}",
+         "-i", str(src_wav), "-c:a", "pcm_s16le", str(dst)])

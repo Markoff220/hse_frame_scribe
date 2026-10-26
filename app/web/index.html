@@ -37,7 +37,7 @@
   .job { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:10px; display:flex; gap:14px; align-items:center; }
   .job .info { flex:1; min-width:0; }.job .name { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }.job .meta { color:var(--muted); font-size:12px; margin-top:2px; }
   .badge { font-size:11px; font-weight:700; padding:3px 9px; border-radius:20px; white-space:nowrap; }.b-uploaded,.b-queued { background:#2a2f3a; color:var(--muted); }.b-running { background:#1d2c4a; color:var(--accent); }.b-done { background:#17352a; color:var(--ok); }.b-error { background:#3a2226; color:var(--err); }
-   .acts { display:flex; gap:8px; align-items:center; } button,.btn { background:var(--card2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:6px 12px; font-size:13px; cursor:pointer; text-decoration:none; display:inline-block; } button:hover,.btn:hover { border-color:var(--accent); }.primary { background:var(--accent); border-color:var(--accent); color:white; }.primary:hover { filter:brightness(1.1); }.delete { color:var(--err); padding:4px 9px; font-size:18px; line-height:1; }.delete:hover { border-color:var(--err); }
+   .acts { display:flex; gap:8px; align-items:center; } button,.btn { background:var(--card2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:6px 12px; font-size:13px; cursor:pointer; text-decoration:none; display:inline-block; } button:hover,.btn:hover { border-color:var(--accent); }.primary { background:var(--accent); border-color:var(--accent); color:white; }.primary:hover { filter:brightness(1.1); }.delete { color:var(--err); padding:4px 9px; font-size:18px; line-height:1; }.delete:hover { border-color:var(--err); }.stop { color:var(--err); }.stop:hover { border-color:var(--err); }.stop:disabled { opacity:.55; cursor:default; border-color:var(--line); }
    .dir { max-width:380px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; color:var(--muted); }
     .model-settings { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
     .model { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:13px; min-width:0; }
@@ -112,7 +112,10 @@
 <script>
 const $ = id => document.getElementById(id);
 const drop = $('drop'), file = $('file'), upstat = $('upstat'), processorJobs = $('transcribe-jobs'), recordsJobs = $('records-jobs'), modelSettings = $('model-settings'), modelMessage = $('model-message');
-let activeJobId = null;
+let activeJobId = null;   // задача, которую только что запустили: её лог открываем сам
+let logJobId = null;      // чей лог сейчас открыт
+let logLive = false;      // открытый лог ещё обновляется (задача в очереди или в работе)
+let refreshTimer = null;
 let modelsData = null;
 const linkForm = $('link-form'), linkUrl = $('link-url'), linkSid = $('link-sid'), SID_KEY = 'videonotes.mtsSessionId';
 const MODE_LABEL = { audio:'аудиодорожка WAV', transcript:'транскрибация', video:'только видео' };
@@ -239,16 +242,19 @@ $('save-models').onclick = async () => {
   } catch (e) { modelMessage.textContent = 'Ошибка: ' + e.message; }
 };
 function jobCard(j, records) {
-  const [label, cls] = BADGE[j.status] || [j.status, 'b-queued'];
+  let [label, cls] = BADGE[j.status] || [j.status, 'b-queued'];
+  if (j.cancelling) label = 'Останавливается';
+  const live = j.status === 'running' || j.status === 'queued';
   const el = document.createElement('div'); el.className = 'job';
   const mode = (j.source === 'mts' ? 'МТС Линк · ' : '') + (MODE_LABEL[j.mode] || 'полная обработка');
   const meta = `${new Date(j.created).toLocaleString('ru')} · ${mode} · ${j.status === 'error' ? (j.error || 'ошибка') : j.status === 'done' ? `готово в ${j.finished}` : (j.stage || '…')}`;
   const dir = j.status === 'done' ? resultDir(j) : '';
-  el.innerHTML = `<div class="info"><div class="name"></div><div class="meta"></div></div><span class="badge ${cls}">${label}</span><div class="acts"><button data-log>Лог</button>${j.status === 'uploaded' && !records ? '<button class="primary" data-start>▶ Запустить</button>' : ''}${j.status === 'done' && j.mode === 'audio' ? `<a class="btn primary" href="/api/jobs/${j.id}/download">Скачать WAV</a>` : ''}${j.status === 'done' && j.mode === 'transcript' ? `<a class="btn primary" href="/api/jobs/${j.id}/download">Скачать .md</a>` : ''}${j.has_video ? `<a class="btn${j.mode === 'video' ? ' primary' : ''}" href="/api/jobs/${j.id}/video">Скачать MP4</a>` : ''}${j.status === 'done' ? `<button class="dir" data-dir title="Папка с результатом — кликни, чтобы скопировать путь"></button>` : ''}${(j.status === 'uploaded' || j.status === 'error' || records) ? '<button class="delete" data-delete title="Удалить заявку" aria-label="Удалить заявку">×</button>' : ''}</div>`;
+  el.innerHTML = `<div class="info"><div class="name"></div><div class="meta"></div></div><span class="badge ${cls}">${label}</span><div class="acts"><button data-log>Лог</button>${live ? `<button class="stop" data-stop${j.cancelling ? ' disabled' : ''} title="Остановить обработку. Сервер продолжит работать, задачу можно будет запустить заново">■ Остановить</button>` : ''}${j.status === 'uploaded' && !records ? '<button class="primary" data-start>▶ Запустить</button>' : ''}${j.status === 'done' && j.mode === 'audio' ? `<a class="btn primary" href="/api/jobs/${j.id}/download">Скачать WAV</a>` : ''}${j.status === 'done' && j.mode === 'transcript' ? `<a class="btn primary" href="/api/jobs/${j.id}/download">Скачать .md</a>` : ''}${j.has_video ? `<a class="btn${j.mode === 'video' ? ' primary' : ''}" href="/api/jobs/${j.id}/video">Скачать MP4</a>` : ''}${j.status === 'done' ? `<button class="dir" data-dir title="Папка с результатом — кликни, чтобы скопировать путь"></button>` : ''}${(j.status === 'uploaded' || j.status === 'error' || records) ? '<button class="delete" data-delete title="Удалить заявку" aria-label="Удалить заявку">×</button>' : ''}</div>`;
   el.querySelector('.name').textContent = j.name;
   el.querySelector('.meta').textContent = meta;  // текст ошибок и названия могут прийти от МТС Линк — не как HTML
   el.querySelector('[data-log]').onclick = () => showLog(j.id);
   const start = el.querySelector('[data-start]'); if (start) start.onclick = () => startJob(j.id);
+  const stop = el.querySelector('[data-stop]'); if (stop) stop.onclick = () => stopJob(j.id, stop);
   const dirBtn = el.querySelector('[data-dir]');
   if (dirBtn) { dirBtn.textContent = dir; dirBtn.dataset.path = dir; dirBtn.onclick = () => copyPath(dirBtn); }
   const deleteBtn = el.querySelector('[data-delete]'); if (deleteBtn) deleteBtn.onclick = () => deleteJob(j.id);
@@ -270,6 +276,16 @@ async function copyPath(btn) {
   btn.textContent = 'Скопировано ✓';
   setTimeout(() => { btn.textContent = old; }, 1500);
 }
+async function stopJob(id, btn) {
+  if (!confirm('Остановить обработку? Сервер продолжит работать, задачу можно будет запустить заново. Скачанные куски записи МТС Линк не пропадут.')) return;
+  btn.disabled = true;
+  try {
+    const r = await fetch(`/api/jobs/${id}/cancel`, {method:'POST'}); const j = await r.json();
+    if (!r.ok) throw new Error(j.detail || r.statusText);
+    upstat.textContent = `■ ${j.name}: остановка отправлена`;
+  } catch (e) { upstat.textContent = 'Ошибка остановки: ' + e.message; btn.disabled = false; }
+  refresh();
+}
 async function deleteJob(id) {
   if (!confirm('Удалить заявку из списка? Подготовленное видео будет удалено, готовые результаты останутся на диске.')) return;
   try {
@@ -277,6 +293,7 @@ async function deleteJob(id) {
     const j = await r.json();
     if (!r.ok) throw new Error(j.detail || r.statusText);
     if (activeJobId === id) activeJobId = null;
+    if (logJobId === id) { logJobId = null; logLive = false; $('logbox').classList.add('hidden'); }
     refresh();
   } catch (e) { alert('Ошибка удаления: ' + e.message); }
 }
@@ -285,7 +302,12 @@ function render(target, jobs, empty, records=false) {
   if (!jobs.length) { target.innerHTML = `<div class="empty">${empty}</div>`; return; }
   jobs.forEach(j => target.appendChild(jobCard(j, records)));
 }
+// Один цикл опроса: раз в 3 с, пока что-то в работе, иначе раз в 15 с.
+// Раньше каждый тик setInterval запускал ещё одну цепочку setTimeout, и за час
+// работы браузер слал сотни запросов в секунду: лог переставал обновляться.
 async function refresh() {
+  clearTimeout(refreshTimer);
+  let anyActive = false;
   try {
     const [jobs, health] = await Promise.all([fetch('/api/jobs').then(r=>r.json()), fetch('/api/health').then(r=>r.json())]);
     healthData = health;
@@ -293,13 +315,39 @@ async function refresh() {
     $('footer').textContent = `Очередь: ${health.queued} · Ollama: ${health.ollama_url || '—'}`;
     render(processorJobs, jobs.filter(j => j.status !== 'done'), 'Загрузи видео или добавь ссылку, затем нажми «Запустить».');
     render(recordsJobs, jobs.filter(j => j.status === 'done'), 'Готовых материалов пока нет.', true);
-    const anyActive = jobs.some(j => j.status === 'running' || j.status === 'queued');
-    if (activeJobId) { const j = jobs.find(x => x.id === activeJobId); if (j?.status === 'running') showLog(activeJobId); else if (j?.status === 'done') activeJobId = null; }
-    if (anyActive) setTimeout(refresh, 3000);
-  } catch (e) { /* сервер недоступен — повторит интервал */ }
+    const isLive = j => j && (j.status === 'running' || j.status === 'queued');
+    anyActive = jobs.some(isLive);
+    if (activeJobId) {
+      const j = jobs.find(x => x.id === activeJobId);
+      if (j?.status === 'running' && logJobId !== activeJobId) showLog(activeJobId);
+      if (!isLive(j)) activeJobId = null;
+    }
+    if (logJobId) {
+      const live = isLive(jobs.find(x => x.id === logJobId));
+      // ещё раз после окончания: иначе лог замирал на последней строке до конца (часто «Сборка MP4: 90%»)
+      if (live || logLive) loadLog(logJobId);
+      logLive = live;
+    }
+  } catch (e) { /* сервер недоступен — повторим по таймеру */ }
+  clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(refresh, anyActive ? 3000 : 15000);
 }
-async function showLog(id) { $('logbox').classList.remove('hidden'); const r = await fetch(`/api/jobs/${id}/log`); $('logtext').textContent = await r.text(); $('logtext').scrollTop = $('logtext').scrollHeight; }
-refresh(); setInterval(refresh, 15000);
+function showLog(id) {
+  logJobId = id; logLive = true;  // следующий refresh решит, обновлять ли дальше
+  $('logbox').classList.remove('hidden');
+  loadLog(id, true);
+}
+async function loadLog(id, toBottom = false) {
+  const box = $('logtext');
+  try {
+    const r = await fetch(`/api/jobs/${id}/log`); const text = await r.text();
+    if (id !== logJobId) return;  // пока грузился, открыли другой лог
+    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+    box.textContent = text;
+    if (toBottom || atBottom) box.scrollTop = box.scrollHeight;  // если листаешь вверх — не дёргаем
+  } catch (e) { /* повторим на следующем refresh */ }
+}
+refresh();
 refreshModels();
 </script>
 </body>
